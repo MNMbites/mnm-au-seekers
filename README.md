@@ -16,6 +16,8 @@ trades.
 - Demo market snapshots so the UI can be reviewed before a data provider is
   connected
 - A versioned Android market-data provider boundary
+- A read-only Android HTTP provider with live/stale health, manual refresh, and
+  labelled demo fallback
 - A read-only MT5 EA that publishes quotes and indicator snapshots
 - A FastAPI ingestion service with token authentication and stale-data status
 - Unit tests for signal agreement and risk sizing
@@ -23,10 +25,11 @@ trades.
 
 ## Safety status
 
-The Android UI still uses labelled demo data. The bridge only exports market
-quotes and indicator values; it has no order, position, account-balance, OpenAI
-API key, MT5 login, or password capability. Bridge tokens are supplied at
-runtime and must never be committed to this repository.
+The Android UI uses labelled demo data unless a backend URL is injected at
+build time. The bridge only exports market quotes and indicator values; it has
+no order, position, account-balance, OpenAI API key, MT5 login, or password
+capability. Bridge tokens are supplied to the backend and EA at runtime and
+must never be committed to this repository or shipped in the Android app.
 
 ## Build
 
@@ -49,14 +52,14 @@ python -m pip install -r backend/requirements-dev.txt
 python -m pytest
 ```
 
-See [docs/mt5-bridge.md](docs/mt5-bridge.md) for backend and MT5 EA setup.
+See [docs/mt5-bridge.md](docs/mt5-bridge.md) for backend and MT5 EA setup, and
+[docs/android-live-data.md](docs/android-live-data.md) for Android connectivity.
 
 ## Roadmap
 
-1. Connect the Android provider to the versioned backend and expose connection
-   health while retaining the demo fallback.
-2. Persist market snapshots and watchlists in PostgreSQL.
-3. Add optional 30–60 minute setup notifications and extra symbols.
+1. Persist market snapshots and watchlists in PostgreSQL.
+2. Add optional 30–60 minute setup notifications and extra symbols.
+3. Add market-health and confidence explanations for early setups.
 4. Add paper trading before any opt-in execution feature is considered.
 
 Trading involves substantial risk. Analysis and forecasts are not guarantees,

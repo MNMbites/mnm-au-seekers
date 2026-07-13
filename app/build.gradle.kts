@@ -4,6 +4,14 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val marketDataBaseUrl = providers
+    .environmentVariable("MNM_MARKET_DATA_BASE_URL")
+    .orElse("")
+    .get()
+
+fun String.asBuildConfigString(): String =
+    "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
 android {
     namespace = "com.mnm.auseekers"
     compileSdk = 35
@@ -16,6 +24,11 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField(
+            "String",
+            "MARKET_DATA_BASE_URL",
+            marketDataBaseUrl.asBuildConfigString(),
+        )
     }
 
     buildTypes {
@@ -60,6 +73,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("com.google.code.gson:gson:2.14.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

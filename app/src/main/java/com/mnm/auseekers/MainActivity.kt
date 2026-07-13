@@ -21,6 +21,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -28,7 +29,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -38,7 +41,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.mnm.auseekers.domain.DemoMarket
+import com.mnm.auseekers.data.DemoMarketDataProvider
+import com.mnm.auseekers.data.FallbackMarketDataProvider
+import com.mnm.auseekers.data.FeedState
+import com.mnm.auseekers.data.HttpMarketDataProvider
+import com.mnm.auseekers.data.MarketDataFeed
+import com.mnm.auseekers.data.MarketDataProvider
 import com.mnm.auseekers.domain.Direction
 import com.mnm.auseekers.domain.MarketAnalysis
 import com.mnm.auseekers.domain.RiskCalculator
@@ -56,7 +64,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             MnmAuSeekersTheme {
-                MnmAuSeekersApp()
+                val provider = remember { configuredMarketDataProvider() }
+                MnmAuSeekersApp(
+                    marketDataProvider = provider,
+                    initialFeed = initialMarketDataFeed(),
+                )
             }
         }
     }
@@ -64,15 +76,27 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MnmAuSeekersApp() {
+private fun MnmAuSeekersApp(
+    marketDataProvider: MarketDataProvider,
+    initialFeed: MarketDataFeed,
+) {
     var mode by rememberSaveable { mutableStateOf(TradingMode.PRIMARY) }
     var profile by rememberSaveable { mutableStateOf(RiskProfile.SAFE) }
     var balance by rememberSaveable { mutableStateOf("15.00") }
     var stopPoints by rememberSaveable { mutableStateOf("50") }
     var pointValue by rememberSaveable { mutableStateOf("0.10") }
+    var refreshRequest by rememberSaveable { mutableIntStateOf(0) }
 
-    val analysis = remember(mode) {
-        SignalEngine().analyse(DemoMarket.snapshots, mode)
+    val feed by produceState(
+        initialValue = initialFeed,
+        marketDataProvider,
+        refreshRequest,
+    ) {
+        value = marketDataProvider.latest(LIVE_SYMBOL)
+    }
+
+    val analysis = remember(mode, feed.snapshots) {
+        SignalEngine().analyse(feed.snapshots, mode)
     }
     val riskPlan = remember(mode, profile, balance, stopPoints, pointValue) {
         RiskCalculator().calculate(
@@ -93,7 +117,7 @@ private fun MnmAuSeekersApp() {
                     Column {
                         Text("MNM AU Seekers", fontWeight = FontWeight.Bold)
                         Text(
-                            "${DemoMarket.symbol} • analysis only",
+                            "${feed.symbol} • analysis only",
                             style = MaterialTheme.typography.labelMedium,
                         )
                     }
@@ -111,7 +135,12 @@ private fun MnmAuSeekersApp() {
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            item { DemoDataBanner() }
+            item {
+                ConnectionBanner(
+                    feed = feed,
+                    onRefresh = { refreshRequest += 1 },
+                )
+            }
             item {
                 ChoiceSection(
                     title = "Trading mode",
@@ -152,17 +181,71 @@ private fun MnmAuSeekersApp() {
 }
 
 @Composable
-private fun DemoDataBanner() {
+private fun ConnectionBanner(
+    feed: MarketDataFeed,
+    onRefresh: () -> Unit,
+) {
+    val containerColor = when (feed.state) {
+        FeedState.LIVE -> MaterialTheme.colorScheme.primaryContainer
+        FeedState.STALE -> MaterialTheme.colorScheme.errorContainer
+        FeedState.CONNECTING, FeedState.DEMO -> MaterialTheme.colorScheme.tertiaryContainer
+    }
+    val contentColor = when (feed.state) {
+        FeedState.LIVE -> MaterialTheme.colorScheme.onPrimaryContainer
+        FeedState.STALE -> MaterialTheme.colorScheme.onErrorContainer
+        FeedState.CONNECTING, FeedState.DEMO -> MaterialTheme.colorScheme.onTertiaryContainer
+    }
+    val heading = when (feed.state) {
+        FeedState.CONNECTING -> "CONNECTING"
+        FeedState.DEMO -> "DEMO DATA"
+        FeedState.LIVE -> "LIVE DATA"
+        FeedState.STALE -> "STALE DATA"
+    }
+    val quote = if (feed.bid != null && feed.ask != null) {
+        "Bid ${feed.bid.format(2)} • Ask ${feed.ask.format(2)}"
+    } else {
+        null
+    }
+    val age = feed.ageSeconds?.let { "Age ${it}s" }
+
     Surface(
-        color = MaterialTheme.colorScheme.tertiaryContainer,
+        color = containerColor,
         shape = MaterialTheme.shapes.medium,
     ) {
-        Text(
-            text = "DEMO DATA • Live MT5 prices and trade execution are not connected.",
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onTertiaryContainer,
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = heading,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Black,
+                    color = contentColor,
+                )
+                Text(
+                    text = feed.statusMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contentColor,
+                )
+                listOfNotNull(quote, age).takeIf { it.isNotEmpty() }?.let { details ->
+                    Text(
+                        text = details.joinToString(" • "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = contentColor,
+                    )
+                }
+            }
+            OutlinedButton(onClick = onRefresh) {
+                Text("Refresh")
+            }
+        }
     }
 }
 
@@ -340,3 +423,30 @@ private fun Double.format(decimals: Int): String = String.format(Locale.US, "%.$
 private fun String.numericInput(): String = filterIndexed { index, character ->
     character.isDigit() || (character == '.' && index == indexOf('.'))
 }
+
+private fun configuredMarketDataProvider(): MarketDataProvider {
+    val baseUrl = BuildConfig.MARKET_DATA_BASE_URL.trim()
+    val demo = DemoMarketDataProvider()
+    if (baseUrl.isBlank()) return demo
+
+    return runCatching {
+        FallbackMarketDataProvider(
+            primary = HttpMarketDataProvider(baseUrl),
+            fallback = demo,
+        )
+    }.getOrElse {
+        DemoMarketDataProvider("Invalid live-service configuration; using bundled demo data.")
+    }
+}
+
+private fun initialMarketDataFeed(): MarketDataFeed = if (
+    BuildConfig.MARKET_DATA_BASE_URL.isBlank()
+) {
+    DemoMarketDataProvider.feed("Bundled demo snapshot; no live service is configured.")
+} else {
+    DemoMarketDataProvider.feed("Connecting to the configured live service…").copy(
+        state = FeedState.CONNECTING,
+    )
+}
+
+private const val LIVE_SYMBOL = "XAUUSD"
