@@ -1,0 +1,88 @@
+package com.mnm.auseekers.data
+
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.IOException
+
+class MarketDataProviderTest {
+    private val parser = MarketDataJsonParser()
+
+    @Test
+    fun parsesVersionedBackendEnvelope() {
+        val feed = parser.parse(validEnvelope())
+
+        assertEquals(FeedState.LIVE, feed.state)
+        assertEquals("XAUUSD", feed.symbol)
+        assertEquals(3, feed.snapshots.size)
+        assertEquals(30, feed.ageSeconds)
+        assertEquals(2420.10, feed.bid!!, 0.0001)
+        assertEquals(2420.30, feed.ask!!, 0.0001)
+    }
+
+    @Test
+    fun rejectsPayloadWithoutEveryRequiredTimeframe() {
+        val invalid = validEnvelope().replace(
+            "\"timeframe\": \"H4\"",
+            "\"timeframe\": \"M15\"",
+        )
+
+        val error = runCatching { parser.parse(invalid) }.exceptionOrNull()
+
+        assertTrue(error is IOException)
+    }
+
+    @Test
+    fun fallsBackToLabelledDemoDataWhenLiveServiceFails() = runBlocking {
+        val unavailable = object : MarketDataProvider {
+            override suspend fun latest(symbol: String): MarketDataFeed {
+                throw IOException("offline")
+            }
+        }
+        val provider = FallbackMarketDataProvider(unavailable)
+
+        val feed = provider.latest("XAUUSD")
+
+        assertEquals(FeedState.DEMO, feed.state)
+        assertEquals(3, feed.snapshots.size)
+        assertTrue(feed.statusMessage.contains("unavailable"))
+    }
+
+    private fun validEnvelope(): String = """
+        {
+          "state": "live",
+          "age_seconds": 30,
+          "received_at": "2026-07-14T11:59:31Z",
+          "snapshot": {
+            "schema_version": "1.0",
+            "source": "mt5",
+            "symbol": "XAUUSD",
+            "captured_at": "2026-07-14T11:59:30Z",
+            "bid": 2420.10,
+            "ask": 2420.30,
+            "timeframes": [
+              ${timeframe("M15", 2420.20)},
+              ${timeframe("H1", 2418.40)},
+              ${timeframe("H4", 2412.80)}
+            ]
+          }
+        }
+    """.trimIndent()
+
+    private fun timeframe(name: String, close: Double): String = """
+        {
+          "timeframe": "$name",
+          "close": $close,
+          "ema5": 2419.80,
+          "ma9": 2419.40,
+          "ma21": 2418.80,
+          "ma63": 2412.20,
+          "ma84": 2408.50,
+          "bb_upper": 2425.00,
+          "bb_lower": 2408.00,
+          "rsi": 58.0,
+          "macd_histogram": 0.42
+        }
+    """.trimIndent()
+}
