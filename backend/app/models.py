@@ -49,10 +49,7 @@ class MarketSnapshot(BaseModel):
     @field_validator("symbol")
     @classmethod
     def normalize_symbol(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized or any(character.isspace() for character in normalized):
-            raise ValueError("symbol must not contain whitespace")
-        return normalized
+        return validated_symbol(value)
 
     @field_validator("captured_at")
     @classmethod
@@ -84,3 +81,21 @@ class MarketDataEnvelope(BaseModel):
     age_seconds: int
     received_at: datetime
     snapshot: MarketSnapshot
+
+
+class WatchlistEntry(BaseModel):
+    symbol: str
+    created_at: datetime
+
+
+class WatchlistResponse(BaseModel):
+    items: list[WatchlistEntry]
+
+
+def validated_symbol(value: str) -> str:
+    normalized = value.strip()
+    if len(normalized) < 2 or len(normalized) > 32:
+        raise ValueError("symbol must contain between 2 and 32 characters")
+    if any(character.isspace() for character in normalized):
+        raise ValueError("symbol must not contain whitespace")
+    return normalized

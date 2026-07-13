@@ -11,7 +11,8 @@ position, account-balance, login, or password capability.
    MACD 12/26/9 values from the current symbol.
 3. Every 30 seconds, it posts a schema `1.0` snapshot to the backend with an
    `X-Bridge-Token` header.
-4. The backend validates and stores only the newest snapshot for each symbol.
+4. The backend validates each snapshot and stores it in memory or configured
+   PostgreSQL history, rejecting duplicate and older timestamps.
 5. Read clients use `GET /api/v1/market-data/{symbol}` and receive an explicit
    `live` or `stale` state.
 
@@ -58,5 +59,6 @@ The latest-data route is intentionally read-only:
 GET /api/v1/market-data/XAUUSD
 ```
 
-The current in-memory store is a single-process milestone implementation.
-Durable PostgreSQL storage and multi-instance fan-out belong in a later change.
+The in-memory store remains available for local development. See
+[postgresql.md](postgresql.md) for durable storage, migrations, and watchlist
+administration.
