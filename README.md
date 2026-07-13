@@ -1,8 +1,9 @@
 # MNM AU Seekers
 
 MNM AU Seekers is an Android-first market analysis companion for XAU/USD and
-other MT5 symbols. The first milestone focuses on explainable analysis and
-capital protection; it does **not** place trades.
+other MT5 symbols. The current milestones cover explainable analysis, capital
+protection, and a read-only MT5 market-data path; the project does **not** place
+trades.
 
 ## What is included
 
@@ -14,16 +15,18 @@ capital protection; it does **not** place trades.
   would exceed the selected risk, including balances around USD 15
 - Demo market snapshots so the UI can be reviewed before a data provider is
   connected
+- A versioned Android market-data provider boundary
+- A read-only MT5 EA that publishes quotes and indicator snapshots
+- A FastAPI ingestion service with token authentication and stale-data status
 - Unit tests for signal agreement and risk sizing
-- Pull-request CI for unit tests, lint, and debug APK assembly
+- Pull-request CI for Android and backend validation
 
 ## Safety status
 
-The current app uses labelled demo data. It has no broker credentials, OpenAI
-API key, MT5 login, order placement, or background notification service. A live
-price feed and an authorised MT5 bridge should be added as separate, reviewable
-changes. Passwords must never be stored in the app or committed to this
-repository.
+The Android UI still uses labelled demo data. The bridge only exports market
+quotes and indicator values; it has no order, position, account-balance, OpenAI
+API key, MT5 login, or password capability. Bridge tokens are supplied at
+runtime and must never be committed to this repository.
 
 ## Build
 
@@ -39,11 +42,21 @@ gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
 GitHub Actions installs the pinned Gradle version, so a binary wrapper is not
 required in this bootstrap.
 
+Backend tests use Python 3.10 or newer:
+
+```bash
+python -m pip install -r backend/requirements-dev.txt
+python -m pytest
+```
+
+See [docs/mt5-bridge.md](docs/mt5-bridge.md) for backend and MT5 EA setup.
+
 ## Roadmap
 
-1. Add a versioned market-data provider interface and live quotes.
-2. Persist watchlists and optional 30–60 minute setup notifications.
-3. Add a user-authorised MT5 bridge with connection health and read-only mode.
+1. Connect the Android provider to the versioned backend and expose connection
+   health while retaining the demo fallback.
+2. Persist market snapshots and watchlists in PostgreSQL.
+3. Add optional 30–60 minute setup notifications and extra symbols.
 4. Add paper trading before any opt-in execution feature is considered.
 
 Trading involves substantial risk. Analysis and forecasts are not guarantees,
