@@ -12,8 +12,17 @@ from backend.app.repository import SnapshotStore
 NOW = datetime(2026, 7, 14, 12, 0, tzinfo=UTC)
 
 
-def make_client(*, token: str | None = "test-bridge-token", max_age: int = 120) -> TestClient:
-    settings = Settings(bridge_token=token, max_snapshot_age_seconds=max_age)
+def make_client(
+    *,
+    token: str | None = "test-bridge-token",
+    admin_token: str | None = "test-admin-token",
+    max_age: int = 120,
+) -> TestClient:
+    settings = Settings(
+        bridge_token=token,
+        watchlist_admin_token=admin_token,
+        max_snapshot_age_seconds=max_age,
+    )
     store = SnapshotStore(max_snapshot_age_seconds=max_age, clock=lambda: NOW)
     return TestClient(create_app(settings=settings, store=store))
 
@@ -54,7 +63,12 @@ def test_health_reports_when_ingestion_is_disabled() -> None:
     response = make_client(token=None).get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "ingestion": "disabled"}
+    assert response.json() == {
+        "status": "ok",
+        "ingestion": "disabled",
+        "storage": "memory",
+        "watchlist_writes": "enabled",
+    }
 
 
 def test_ingestion_requires_runtime_token_configuration() -> None:
@@ -138,6 +152,50 @@ def test_requires_each_supported_timeframe_exactly_once() -> None:
         "/api/v1/market-data/mt5/snapshots",
         json=payload,
         headers={"X-Bridge-Token": "test-bridge-token"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_watchlist_mutations_require_separate_admin_token() -> None:
+    disabled = make_client(admin_token=None).put(
+        "/api/v1/watchlist/XAUUSD",
+        headers={"X-Admin-Token": "anything"},
+    )
+    invalid = make_client().put(
+        "/api/v1/watchlist/XAUUSD",
+        headers={"X-Admin-Token": "wrong"},
+    )
+
+    assert disabled.status_code == 503
+    assert invalid.status_code == 401
+
+
+def test_watchlist_is_case_insensitive_and_mutations_are_idempotent() -> None:
+    client = make_client()
+    headers = {"X-Admin-Token": "test-admin-token"}
+
+    first = client.put("/api/v1/watchlist/XAUUSD", headers=headers)
+    duplicate = client.put("/api/v1/watchlist/xauusd", headers=headers)
+    listed = client.get("/api/v1/watchlist")
+
+    assert first.status_code == 200
+    assert duplicate.status_code == 200
+    assert duplicate.json() == first.json()
+    assert [item["symbol"] for item in listed.json()["items"]] == ["XAUUSD"]
+
+    removed = client.delete("/api/v1/watchlist/xauusd", headers=headers)
+    missing = client.delete("/api/v1/watchlist/XAUUSD", headers=headers)
+
+    assert removed.status_code == 204
+    assert missing.status_code == 404
+    assert client.get("/api/v1/watchlist").json() == {"items": []}
+
+
+def test_watchlist_rejects_invalid_symbols() -> None:
+    response = make_client().put(
+        "/api/v1/watchlist/X",
+        headers={"X-Admin-Token": "test-admin-token"},
     )
 
     assert response.status_code == 422

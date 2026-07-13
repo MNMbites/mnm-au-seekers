@@ -3,7 +3,8 @@
 MNM AU Seekers is an Android-first market analysis companion for XAU/USD and
 other MT5 symbols. The current milestones cover explainable analysis, capital
 protection, and a read-only MT5 market-data path; the project does **not** place
-trades.
+trades. PostgreSQL persistence and shared watchlists are available for deployed
+backends.
 
 ## What is included
 
@@ -20,6 +21,8 @@ trades.
   labelled demo fallback
 - A read-only MT5 EA that publishes quotes and indicator snapshots
 - A FastAPI ingestion service with token authentication and stale-data status
+- Durable snapshot history and case-insensitive watchlists with Alembic
+  migrations
 - Unit tests for signal agreement and risk sizing
 - Pull-request CI for Android and backend validation
 
@@ -54,13 +57,14 @@ python -m pytest
 
 See [docs/mt5-bridge.md](docs/mt5-bridge.md) for backend and MT5 EA setup, and
 [docs/android-live-data.md](docs/android-live-data.md) for Android connectivity.
+For production persistence and watchlist administration, see
+[docs/postgresql.md](docs/postgresql.md).
 
 ## Roadmap
 
-1. Persist market snapshots and watchlists in PostgreSQL.
-2. Add optional 30–60 minute setup notifications and extra symbols.
-3. Add market-health and confidence explanations for early setups.
-4. Add paper trading before any opt-in execution feature is considered.
+1. Add optional 30–60 minute setup notifications and extra symbols.
+2. Add market-health and confidence explanations for early setups.
+3. Add paper trading before any opt-in execution feature is considered.
 
 Trading involves substantial risk. Analysis and forecasts are not guarantees,
 and the app must not increase a position merely to meet a broker minimum.

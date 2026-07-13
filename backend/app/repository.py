@@ -3,12 +3,27 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 from threading import RLock
+from typing import Protocol
 
-from backend.app.models import MarketDataEnvelope, MarketSnapshot
+from backend.app.models import MarketDataEnvelope, MarketSnapshot, WatchlistEntry
 
 
 class OutOfOrderSnapshotError(ValueError):
     """Raised when a bridge submits an older or duplicate snapshot."""
+
+
+class MarketDataRepository(Protocol):
+    storage_kind: str
+
+    def upsert(self, snapshot: MarketSnapshot) -> None: ...
+
+    def latest(self, symbol: str) -> MarketDataEnvelope | None: ...
+
+    def list_watchlist(self) -> list[WatchlistEntry]: ...
+
+    def add_watchlist_symbol(self, symbol: str) -> WatchlistEntry: ...
+
+    def remove_watchlist_symbol(self, symbol: str) -> bool: ...
 
 
 class SnapshotStore:
@@ -19,6 +34,8 @@ class SnapshotStore:
     Android process.
     """
 
+    storage_kind = "memory"
+
     def __init__(
         self,
         max_snapshot_age_seconds: int,
@@ -27,6 +44,7 @@ class SnapshotStore:
         self._max_snapshot_age_seconds = max_snapshot_age_seconds
         self._clock = clock or (lambda: datetime.now(UTC))
         self._snapshots: dict[str, tuple[MarketSnapshot, datetime]] = {}
+        self._watchlist: dict[str, WatchlistEntry] = {}
         self._lock = RLock()
 
     def upsert(self, snapshot: MarketSnapshot) -> None:
@@ -55,6 +73,27 @@ class SnapshotStore:
             received_at=received_at,
             snapshot=snapshot,
         )
+
+    def list_watchlist(self) -> list[WatchlistEntry]:
+        with self._lock:
+            return sorted(
+                self._watchlist.values(),
+                key=lambda entry: entry.symbol.casefold(),
+            )
+
+    def add_watchlist_symbol(self, symbol: str) -> WatchlistEntry:
+        key = symbol.casefold()
+        with self._lock:
+            existing = self._watchlist.get(key)
+            if existing is not None:
+                return existing
+            entry = WatchlistEntry(symbol=symbol, created_at=self._utc_now())
+            self._watchlist[key] = entry
+            return entry
+
+    def remove_watchlist_symbol(self, symbol: str) -> bool:
+        with self._lock:
+            return self._watchlist.pop(symbol.casefold(), None) is not None
 
     def _utc_now(self) -> datetime:
         value = self._clock()
