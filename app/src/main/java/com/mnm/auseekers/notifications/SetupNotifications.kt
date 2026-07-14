@@ -19,6 +19,8 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.mnm.auseekers.MainActivity
 import com.mnm.auseekers.R
+import com.mnm.auseekers.analysis.MarketHealthEvaluator
+import com.mnm.auseekers.analysis.MarketHealthLevel
 import com.mnm.auseekers.data.FeedState
 import com.mnm.auseekers.data.MarketDataFeed
 import com.mnm.auseekers.domain.Direction
@@ -46,6 +48,7 @@ data class SetupNotification(
 
 class SetupNotificationEvaluator(
     private val signalEngine: SignalEngine = SignalEngine(),
+    private val marketHealthEvaluator: MarketHealthEvaluator = MarketHealthEvaluator(),
 ) {
     fun evaluate(feed: MarketDataFeed): SetupNotification? {
         if (feed.state != FeedState.LIVE) return null
@@ -54,11 +57,15 @@ class SetupNotificationEvaluator(
         if (analysis.direction == Direction.WAIT || analysis.stage == SetupStage.WATCH) {
             return null
         }
+        val marketHealth = marketHealthEvaluator.evaluate(feed, analysis)
+        if (marketHealth.level == MarketHealthLevel.NOT_READY) return null
 
         return SetupNotification(
             symbol = feed.symbol,
             title = "${feed.symbol} ${analysis.direction.label} setup",
-            body = "${analysis.stage.label} • ${analysis.strength}% alignment. Analysis only.",
+            body = "${analysis.stage.label} • ${analysis.strength}% alignment • " +
+                "${marketHealth.level.label}. ${marketHealth.confidenceExplanation} " +
+                "Analysis only.",
             fingerprint = "${analysis.direction.name}:${analysis.stage.name}",
         )
     }

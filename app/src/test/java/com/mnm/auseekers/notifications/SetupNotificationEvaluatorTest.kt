@@ -29,6 +29,13 @@ class SetupNotificationEvaluatorTest {
     }
 
     @Test
+    fun skipsSetupWhenMarketHealthIsNotReady() {
+        val feed = feed(FeedState.LIVE, ::bullish).copy(bid = 100.0, ask = 100.2)
+
+        assertNull(evaluator.evaluate(feed))
+    }
+
+    @Test
     fun skipsLiveDataWithoutHigherTimeframeAgreement() {
         val snapshots = listOf(
             bullish(Timeframe.M15),
@@ -50,6 +57,9 @@ class SetupNotificationEvaluatorTest {
         capturedAt = null,
         state = state,
         snapshots = Timeframe.entries.map(snapshot),
+        bid = 2420.10,
+        ask = 2420.30,
+        ageSeconds = 30,
         statusMessage = "test",
     )
 
