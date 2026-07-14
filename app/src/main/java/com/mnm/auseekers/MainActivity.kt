@@ -1,8 +1,14 @@
 package com.mnm.auseekers
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Card
@@ -28,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -38,9 +46,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import com.mnm.auseekers.data.DEFAULT_SYMBOL
 import com.mnm.auseekers.data.DemoMarketDataProvider
 import com.mnm.auseekers.data.FallbackMarketDataProvider
 import com.mnm.auseekers.data.FeedState
@@ -56,6 +67,8 @@ import com.mnm.auseekers.domain.RiskRequest
 import com.mnm.auseekers.domain.SignalEngine
 import com.mnm.auseekers.domain.TimeframeSignal
 import com.mnm.auseekers.domain.TradingMode
+import com.mnm.auseekers.notifications.NotificationInterval
+import com.mnm.auseekers.notifications.SetupNotificationScheduler
 import com.mnm.auseekers.ui.theme.MnmAuSeekersTheme
 import java.util.Locale
 
@@ -80,19 +93,54 @@ private fun MnmAuSeekersApp(
     marketDataProvider: MarketDataProvider,
     initialFeed: MarketDataFeed,
 ) {
+    val context = LocalContext.current
     var mode by rememberSaveable { mutableStateOf(TradingMode.PRIMARY) }
     var profile by rememberSaveable { mutableStateOf(RiskProfile.SAFE) }
     var balance by rememberSaveable { mutableStateOf("15.00") }
     var stopPoints by rememberSaveable { mutableStateOf("50") }
     var pointValue by rememberSaveable { mutableStateOf("0.10") }
     var refreshRequest by rememberSaveable { mutableIntStateOf(0) }
+    var selectedSymbol by rememberSaveable { mutableStateOf(DEFAULT_SYMBOL) }
+    var notificationInterval by rememberSaveable {
+        mutableStateOf(SetupNotificationScheduler.currentInterval(context))
+    }
+    var pendingNotificationInterval by remember { mutableStateOf<NotificationInterval?>(null) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val pending = pendingNotificationInterval
+        if (granted && pending != null) {
+            SetupNotificationScheduler.schedule(context, pending)
+            notificationInterval = pending
+        }
+        pendingNotificationInterval = null
+    }
+
+    val symbols by produceState(
+        initialValue = listOf(DEFAULT_SYMBOL),
+        marketDataProvider,
+        refreshRequest,
+    ) {
+        value = marketDataProvider.watchlist().ifEmpty { listOf(DEFAULT_SYMBOL) }
+    }
+
+    LaunchedEffect(symbols) {
+        if (selectedSymbol !in symbols) selectedSymbol = symbols.first()
+    }
 
     val feed by produceState(
         initialValue = initialFeed,
         marketDataProvider,
+        selectedSymbol,
         refreshRequest,
     ) {
-        value = marketDataProvider.latest(LIVE_SYMBOL)
+        value = initialFeed.copy(
+            symbol = selectedSymbol,
+            state = FeedState.CONNECTING,
+            statusMessage = "Loading $selectedSymbol from the configured data source…",
+        )
+        value = marketDataProvider.latest(selectedSymbol)
     }
 
     val analysis = remember(mode, feed.snapshots) {
@@ -117,7 +165,7 @@ private fun MnmAuSeekersApp(
                     Column {
                         Text("MNM AU Seekers", fontWeight = FontWeight.Bold)
                         Text(
-                            "${feed.symbol} • analysis only",
+                            "$selectedSymbol • analysis only",
                             style = MaterialTheme.typography.labelMedium,
                         )
                     }
@@ -136,6 +184,15 @@ private fun MnmAuSeekersApp(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item {
+                ChoiceSection(
+                    title = "Watchlist symbol",
+                    options = symbols,
+                    selected = selectedSymbol,
+                    label = { it },
+                    onSelected = { selectedSymbol = it },
+                )
+            }
+            item {
                 ConnectionBanner(
                     feed = feed,
                     onRefresh = { refreshRequest += 1 },
@@ -151,6 +208,24 @@ private fun MnmAuSeekersApp(
                 )
             }
             item { AnalysisCard(analysis) }
+            item {
+                NotificationSettings(
+                    selected = notificationInterval,
+                    liveServiceConfigured = BuildConfig.MARKET_DATA_BASE_URL.isNotBlank(),
+                    onSelected = { interval ->
+                        if (interval == NotificationInterval.OFF) {
+                            SetupNotificationScheduler.cancel(context)
+                            notificationInterval = interval
+                        } else if (notificationPermissionGranted(context)) {
+                            SetupNotificationScheduler.schedule(context, interval)
+                            notificationInterval = interval
+                        } else {
+                            pendingNotificationInterval = interval
+                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    },
+                )
+            }
             item { SectionTitle("Timeframe agreement") }
             items(analysis.timeframeSignals, key = { it.timeframe }) { signal ->
                 TimeframeCard(signal)
@@ -250,22 +325,54 @@ private fun ConnectionBanner(
 }
 
 @Composable
+private fun NotificationSettings(
+    selected: NotificationInterval,
+    liveServiceConfigured: Boolean,
+    onSelected: (NotificationInterval) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ChoiceSection(
+            title = "Setup notifications",
+            options = NotificationInterval.entries,
+            selected = selected,
+            label = { it.label },
+            optionEnabled = {
+                it == NotificationInterval.OFF || liveServiceConfigured
+            },
+            onSelected = onSelected,
+        )
+        Text(
+            text = if (liveServiceConfigured) {
+                "Optional approximate checks use live watchlist data only. " +
+                    "Alerts are analysis signals, not orders or guarantees."
+            } else {
+                "Configure a live-service URL at build time to enable setup notifications."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
 private fun <T> ChoiceSection(
     title: String,
     options: List<T>,
     selected: T,
     label: (T) -> String,
+    optionEnabled: (T) -> Boolean = { true },
     onSelected: (T) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SectionTitle(title)
-        Row(
+        LazyRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            options.forEach { option ->
+            items(options) { option ->
                 FilterChip(
                     selected = selected == option,
+                    enabled = optionEnabled(option),
                     onClick = { onSelected(option) },
                     label = { Text(label(option)) },
                 )
@@ -442,11 +549,20 @@ private fun configuredMarketDataProvider(): MarketDataProvider {
 private fun initialMarketDataFeed(): MarketDataFeed = if (
     BuildConfig.MARKET_DATA_BASE_URL.isBlank()
 ) {
-    DemoMarketDataProvider.feed("Bundled demo snapshot; no live service is configured.")
+    DemoMarketDataProvider.feed(
+        statusMessage = "Bundled demo snapshot; no live service is configured.",
+    )
 } else {
-    DemoMarketDataProvider.feed("Connecting to the configured live service…").copy(
+    DemoMarketDataProvider.feed(
+        statusMessage = "Connecting to the configured live service…",
+    ).copy(
         state = FeedState.CONNECTING,
     )
 }
 
-private const val LIVE_SYMBOL = "XAUUSD"
+private fun notificationPermissionGranted(context: Context): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED

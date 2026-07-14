@@ -19,6 +19,7 @@ backends.
 - A versioned Android market-data provider boundary
 - A read-only Android HTTP provider with live/stale health, manual refresh, and
   labelled demo fallback
+- Backend-driven multi-symbol selection and opt-in 30/60-minute setup alerts
 - A read-only MT5 EA that publishes quotes and indicator snapshots
 - A FastAPI ingestion service with token authentication and stale-data status
 - Durable snapshot history and case-insensitive watchlists with Alembic
@@ -58,13 +59,14 @@ python -m pytest
 See [docs/mt5-bridge.md](docs/mt5-bridge.md) for backend and MT5 EA setup, and
 [docs/android-live-data.md](docs/android-live-data.md) for Android connectivity.
 For production persistence and watchlist administration, see
-[docs/postgresql.md](docs/postgresql.md).
+[docs/postgresql.md](docs/postgresql.md). Multi-symbol Android and notification
+behavior is documented in
+[docs/android-notifications.md](docs/android-notifications.md).
 
 ## Roadmap
 
-1. Add optional 30–60 minute setup notifications and extra symbols.
-2. Add market-health and confidence explanations for early setups.
-3. Add paper trading before any opt-in execution feature is considered.
+1. Add market-health and confidence explanations for early setups.
+2. Add paper trading before any opt-in execution feature is considered.
 
 Trading involves substantial risk. Analysis and forecasts are not guarantees,
 and the app must not increase a position merely to meet a broker minimum.

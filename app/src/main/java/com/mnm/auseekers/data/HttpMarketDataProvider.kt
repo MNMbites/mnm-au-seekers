@@ -17,6 +17,10 @@ class HttpMarketDataProvider(
     override suspend fun latest(symbol: String): MarketDataFeed = withContext(Dispatchers.IO) {
         parser.parse(transport.latest(symbol))
     }
+
+    override suspend fun watchlist(): List<String> = withContext(Dispatchers.IO) {
+        parser.parseWatchlist(transport.watchlist())
+    }
 }
 
 internal class HttpMarketDataTransport(baseUrl: String) {
@@ -31,9 +35,15 @@ internal class HttpMarketDataTransport(baseUrl: String) {
 
     fun latest(symbol: String): String {
         val encodedSymbol = URLEncoder.encode(symbol, StandardCharsets.UTF_8.toString())
-        val connection = URI(
-            "$normalizedBaseUrl/api/v1/market-data/$encodedSymbol",
-        ).toURL().openConnection() as HttpURLConnection
+        return get("/api/v1/market-data/$encodedSymbol")
+    }
+
+    fun watchlist(): String = get("/api/v1/watchlist")
+
+    private fun get(path: String): String {
+        val connection = URI("$normalizedBaseUrl$path")
+            .toURL()
+            .openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = "GET"
             connection.setRequestProperty("Accept", "application/json")
