@@ -51,6 +51,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.mnm.auseekers.analysis.HealthFactorState
+import com.mnm.auseekers.analysis.MarketHealthAssessment
+import com.mnm.auseekers.analysis.MarketHealthEvaluator
+import com.mnm.auseekers.analysis.MarketHealthLevel
 import com.mnm.auseekers.data.DEFAULT_SYMBOL
 import com.mnm.auseekers.data.DemoMarketDataProvider
 import com.mnm.auseekers.data.FallbackMarketDataProvider
@@ -146,6 +150,9 @@ private fun MnmAuSeekersApp(
     val analysis = remember(mode, feed.snapshots) {
         SignalEngine().analyse(feed.snapshots, mode)
     }
+    val marketHealth = remember(feed, analysis) {
+        MarketHealthEvaluator().evaluate(feed, analysis)
+    }
     val riskPlan = remember(mode, profile, balance, stopPoints, pointValue) {
         RiskCalculator().calculate(
             RiskRequest(
@@ -208,6 +215,7 @@ private fun MnmAuSeekersApp(
                 )
             }
             item { AnalysisCard(analysis) }
+            item { MarketHealthCard(marketHealth) }
             item {
                 NotificationSettings(
                     selected = notificationInterval,
@@ -322,6 +330,80 @@ private fun ConnectionBanner(
             }
         }
     }
+}
+
+@Composable
+private fun MarketHealthCard(assessment: MarketHealthAssessment) {
+    val accent = when (assessment.level) {
+        MarketHealthLevel.READY -> Color(0xFF006C4C)
+        MarketHealthLevel.CAUTION -> Color(0xFF8A5300)
+        MarketHealthLevel.NOT_READY -> MaterialTheme.colorScheme.error
+    }
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = accent.copy(alpha = 0.10f),
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text("MARKET HEALTH", fontWeight = FontWeight.Black, color = accent)
+                    Text(assessment.level.label, style = MaterialTheme.typography.titleLarge)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        "${assessment.score}/100",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Black,
+                        color = accent,
+                    )
+                    Text("readiness")
+                }
+            }
+            Text(assessment.confidenceLabel, fontWeight = FontWeight.Bold)
+            Text(assessment.confidenceExplanation)
+            assessment.factors.forEach { factor ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Text(
+                        text = "●",
+                        color = healthFactorColor(factor.state),
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(factor.title, fontWeight = FontWeight.SemiBold)
+                        Text(factor.detail, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text(
+                        text = "+${factor.points}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(
+                text = "Readiness measures data quality and signal agreement—not outcome probability.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun healthFactorColor(state: HealthFactorState): Color = when (state) {
+    HealthFactorState.POSITIVE -> Color(0xFF006C4C)
+    HealthFactorState.CAUTION -> Color(0xFF8A5300)
+    HealthFactorState.BLOCKING -> MaterialTheme.colorScheme.error
 }
 
 @Composable

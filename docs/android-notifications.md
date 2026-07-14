@@ -41,8 +41,9 @@ checks. The worker:
 1. reads the public backend watchlist;
 2. fetches the latest snapshot for every symbol;
 3. ignores demo, stale, unavailable, and `WAIT` results;
-4. applies the Primary-mode signal engine; and
-5. posts an analysis-only alert for an early or confirmed Buy/Sell setup.
+4. applies the Primary-mode signal engine and market-health evaluator; and
+5. posts an analysis-only alert for a Ready/Caution early or confirmed Buy/Sell
+   setup.
 
 The same symbol/direction/stage is notified once. It can alert again only after
 the setup clears or changes, preventing a notification every polling interval.
@@ -53,3 +54,6 @@ exact market timer.
 Notification evaluation uses only the public read endpoints. The Android app
 does not receive the bridge token, watchlist admin token, MT5 credentials,
 account data, or any execution capability.
+
+See [market-health.md](market-health.md) for the readiness factors and confidence
+language included in each alert.
