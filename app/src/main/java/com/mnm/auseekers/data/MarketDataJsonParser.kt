@@ -52,6 +52,25 @@ class MarketDataJsonParser {
         throw IOException("Live service returned an invalid market-data payload.", error)
     }
 
+    fun parseWatchlist(json: String): List<String> = try {
+        val root = JsonParser.parseString(json).requiredObject("response")
+        val symbols = root.requiredArray("items").map { element ->
+            element.requiredObject("watchlist item")
+                .requiredString("symbol")
+                .validatedSymbol()
+        }
+        require(symbols.distinctBy { it.lowercase(Locale.US) }.size == symbols.size) {
+            "Watchlist symbols must be unique"
+        }
+        symbols
+    } catch (error: JsonParseException) {
+        throw IOException("Live service returned malformed watchlist JSON.", error)
+    } catch (error: IllegalArgumentException) {
+        throw IOException("Live service returned an invalid watchlist payload.", error)
+    } catch (error: IllegalStateException) {
+        throw IOException("Live service returned an invalid watchlist payload.", error)
+    }
+
     private fun JsonObject.toMarketSnapshot(): MarketSnapshot = MarketSnapshot(
         timeframe = Timeframe.valueOf(requiredString("timeframe")),
         close = requiredDouble("close"),
@@ -70,6 +89,12 @@ class MarketDataJsonParser {
         "LIVE" -> FeedState.LIVE
         "STALE" -> FeedState.STALE
         else -> throw IllegalArgumentException("Unsupported backend feed state")
+    }
+}
+
+private fun String.validatedSymbol(): String = trim().also { symbol ->
+    require(symbol.length in 2..32 && symbol.none(Char::isWhitespace)) {
+        "Invalid watchlist symbol"
     }
 }
 

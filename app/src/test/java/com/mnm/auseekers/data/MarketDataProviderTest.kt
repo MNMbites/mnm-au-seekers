@@ -39,6 +39,8 @@ class MarketDataProviderTest {
             override suspend fun latest(symbol: String): MarketDataFeed {
                 throw IOException("offline")
             }
+
+            override suspend fun watchlist(): List<String> = throw IOException("offline")
         }
         val provider = FallbackMarketDataProvider(unavailable)
 
@@ -47,6 +49,36 @@ class MarketDataProviderTest {
         assertEquals(FeedState.DEMO, feed.state)
         assertEquals(3, feed.snapshots.size)
         assertTrue(feed.statusMessage.contains("unavailable"))
+    }
+
+    @Test
+    fun parsesWatchlistAndPreservesServerOrder() {
+        val symbols = parser.parseWatchlist(
+            """
+                {
+                  "items": [
+                    {"symbol": "XAUUSD", "created_at": "2026-07-14T12:00:00Z"},
+                    {"symbol": "EURUSD", "created_at": "2026-07-14T12:01:00Z"}
+                  ]
+                }
+            """.trimIndent(),
+        )
+
+        assertEquals(listOf("XAUUSD", "EURUSD"), symbols)
+    }
+
+    @Test
+    fun rejectsCaseInsensitiveDuplicateWatchlistSymbols() {
+        val invalid = """
+            {
+              "items": [
+                {"symbol": "XAUUSD"},
+                {"symbol": "xauusd"}
+              ]
+            }
+        """.trimIndent()
+
+        assertTrue(runCatching { parser.parseWatchlist(invalid) }.exceptionOrNull() is IOException)
     }
 
     private fun validEnvelope(): String = """

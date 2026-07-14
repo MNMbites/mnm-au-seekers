@@ -26,16 +26,23 @@ data class MarketDataFeed(
 /** Boundary shared by bundled demo data and the versioned backend transport. */
 interface MarketDataProvider {
     suspend fun latest(symbol: String): MarketDataFeed
+
+    suspend fun watchlist(): List<String>
 }
 
 class DemoMarketDataProvider(
     private val statusMessage: String = "Bundled demo snapshot; no live service is configured.",
 ) : MarketDataProvider {
-    override suspend fun latest(symbol: String): MarketDataFeed = feed(statusMessage)
+    override suspend fun latest(symbol: String): MarketDataFeed = feed(symbol, statusMessage)
+
+    override suspend fun watchlist(): List<String> = listOf(DEFAULT_SYMBOL)
 
     companion object {
-        fun feed(statusMessage: String): MarketDataFeed = MarketDataFeed(
-            symbol = DemoMarket.symbol,
+        fun feed(
+            symbol: String = DEFAULT_SYMBOL,
+            statusMessage: String,
+        ): MarketDataFeed = MarketDataFeed(
+            symbol = symbol,
             capturedAt = null,
             state = FeedState.DEMO,
             snapshots = DemoMarket.snapshots,
@@ -57,4 +64,14 @@ class FallbackMarketDataProvider(
             statusMessage = "Live service unavailable; using bundled demo data.",
         )
     }
+
+    override suspend fun watchlist(): List<String> = try {
+        primary.watchlist()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        fallback.watchlist()
+    }
 }
+
+const val DEFAULT_SYMBOL = "XAUUSD"

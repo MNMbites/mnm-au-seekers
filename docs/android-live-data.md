@@ -32,7 +32,12 @@ loopback hosts. Deployed backends must use HTTPS.
 - A timeout, malformed response, or non-200 status falls back to bundled demo
   data and displays the fallback state.
 - The Refresh button repeats the request without restarting the app.
+- The app reads `GET /api/v1/watchlist` and exposes every configured symbol as
+  a selector, falling back to XAU/USD when the list is empty or unavailable.
 
 The Android client never receives the MT5 bridge token. That secret is only
 used between the authorised EA and the backend ingestion endpoint. The Android
 transport remains read-only and contains no order route.
+
+See [android-notifications.md](android-notifications.md) for multi-symbol bridge
+setup and optional 30/60-minute analysis alerts.
