@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -73,6 +74,10 @@ import com.mnm.auseekers.domain.TimeframeSignal
 import com.mnm.auseekers.domain.TradingMode
 import com.mnm.auseekers.notifications.NotificationInterval
 import com.mnm.auseekers.notifications.SetupNotificationScheduler
+import com.mnm.auseekers.paper.AndroidPaperTradingRepository
+import com.mnm.auseekers.paper.OpenPaperTradeRequest
+import com.mnm.auseekers.paper.PaperPortfolio
+import com.mnm.auseekers.paper.PaperPosition
 import com.mnm.auseekers.ui.theme.MnmAuSeekersTheme
 import java.util.Locale
 
@@ -103,12 +108,18 @@ private fun MnmAuSeekersApp(
     var balance by rememberSaveable { mutableStateOf("15.00") }
     var stopPoints by rememberSaveable { mutableStateOf("50") }
     var pointValue by rememberSaveable { mutableStateOf("0.10") }
+    var pointSize by rememberSaveable { mutableStateOf("0.01") }
     var refreshRequest by rememberSaveable { mutableIntStateOf(0) }
     var selectedSymbol by rememberSaveable { mutableStateOf(DEFAULT_SYMBOL) }
     var notificationInterval by rememberSaveable {
         mutableStateOf(SetupNotificationScheduler.currentInterval(context))
     }
     var pendingNotificationInterval by remember { mutableStateOf<NotificationInterval?>(null) }
+    val paperRepository = remember(context) {
+        AndroidPaperTradingRepository(context.applicationContext)
+    }
+    var paperPortfolio by remember { mutableStateOf(paperRepository.load()) }
+    var paperMessage by rememberSaveable { mutableStateOf<String?>(null) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -157,6 +168,24 @@ private fun MnmAuSeekersApp(
         RiskCalculator().calculate(
             RiskRequest(
                 balance = balance.toDoubleOrNull() ?: 0.0,
+                profile = profile,
+                mode = mode,
+                stopDistancePoints = stopPoints.toDoubleOrNull() ?: 0.0,
+                valuePerPointPerLot = pointValue.toDoubleOrNull() ?: 0.0,
+            ),
+        )
+    }
+    val paperRiskBalance = paperPortfolio.cashBalance ?: (balance.toDoubleOrNull() ?: 0.0)
+    val paperRiskPlan = remember(
+        mode,
+        profile,
+        paperRiskBalance,
+        stopPoints,
+        pointValue,
+    ) {
+        RiskCalculator().calculate(
+            RiskRequest(
+                balance = paperRiskBalance,
                 profile = profile,
                 mode = mode,
                 stopDistancePoints = stopPoints.toDoubleOrNull() ?: 0.0,
@@ -252,12 +281,98 @@ private fun MnmAuSeekersApp(
                     balance = balance,
                     stopPoints = stopPoints,
                     pointValue = pointValue,
+                    pointSize = pointSize,
                     onBalanceChange = { balance = it.numericInput() },
                     onStopChange = { stopPoints = it.numericInput() },
                     onPointValueChange = { pointValue = it.numericInput() },
+                    onPointSizeChange = { pointSize = it.numericInput() },
                 )
             }
             item { RiskCard(riskPlan) }
+            item {
+                val selectedPosition = paperPortfolio.openPositions.firstOrNull {
+                    it.symbol.equals(selectedSymbol, ignoreCase = true)
+                }
+                val unrealizedPnl = selectedPosition?.let { position ->
+                    val bid = feed.bid
+                    val ask = feed.ask
+                    if (feed.state == FeedState.LIVE && bid != null && ask != null) {
+                        runCatching {
+                            paperRepository.unrealizedPnl(position, bid, ask)
+                        }.getOrNull()
+                    } else {
+                        null
+                    }
+                }
+                PaperTradingCard(
+                    portfolio = paperPortfolio,
+                    selectedSymbol = selectedSymbol,
+                    selectedPosition = selectedPosition,
+                    unrealizedPnl = unrealizedPnl,
+                    feed = feed,
+                    analysis = analysis,
+                    marketHealth = marketHealth,
+                    riskPlan = paperRiskPlan,
+                    pointSize = pointSize.toDoubleOrNull(),
+                    pointValuePerLot = pointValue.toDoubleOrNull(),
+                    stopPoints = stopPoints.toDoubleOrNull(),
+                    startingBalance = balance.toDoubleOrNull(),
+                    message = paperMessage,
+                    onOpen = {
+                        val result = runCatching {
+                            paperRepository.open(
+                                OpenPaperTradeRequest(
+                                    symbol = selectedSymbol,
+                                    direction = analysis.direction,
+                                    lotSize = requireNotNull(paperRiskPlan.suggestedLot),
+                                    bid = requireNotNull(feed.bid),
+                                    ask = requireNotNull(feed.ask),
+                                    pointSize = requireNotNull(pointSize.toDoubleOrNull()),
+                                    valuePerPointPerLot = requireNotNull(
+                                        pointValue.toDoubleOrNull(),
+                                    ),
+                                    plannedStopPoints = requireNotNull(
+                                        stopPoints.toDoubleOrNull(),
+                                    ),
+                                    maximumPlannedLoss = paperRiskPlan.maximumLoss,
+                                    startingBalance = requireNotNull(balance.toDoubleOrNull()),
+                                ),
+                            )
+                        }
+                        result.onSuccess {
+                            paperPortfolio = it
+                            paperMessage = "Paper position opened locally."
+                        }.onFailure {
+                            paperMessage = it.message ?: "Paper position could not be opened."
+                        }
+                    },
+                    onClose = { position ->
+                        val result = runCatching {
+                            paperRepository.close(
+                                position.id,
+                                requireNotNull(feed.bid),
+                                requireNotNull(feed.ask),
+                            )
+                        }
+                        result.onSuccess {
+                            paperPortfolio = it
+                            paperMessage = "Paper position closed locally."
+                        }.onFailure {
+                            paperMessage = it.message ?: "Paper position could not be closed."
+                        }
+                    },
+                    onReset = {
+                        runCatching { paperRepository.reset() }
+                            .onSuccess {
+                                paperPortfolio = it
+                                paperMessage = "Paper portfolio reset."
+                            }
+                            .onFailure {
+                                paperMessage = it.message ?: "Paper portfolio could not be reset."
+                            }
+                    },
+                )
+            }
             item { SafetyFooter() }
         }
     }
@@ -525,9 +640,11 @@ private fun RiskInputs(
     balance: String,
     stopPoints: String,
     pointValue: String,
+    pointSize: String,
     onBalanceChange: (String) -> Unit,
     onStopChange: (String) -> Unit,
     onPointValueChange: (String) -> Unit,
+    onPointSizeChange: (String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionTitle("Position inputs")
@@ -558,6 +675,14 @@ private fun RiskInputs(
                 modifier = Modifier.weight(1f),
             )
         }
+        OutlinedTextField(
+            value = pointSize,
+            onValueChange = onPointSizeChange,
+            label = { Text("Price units per point (paper P&L)") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -583,6 +708,176 @@ private fun RiskCard(plan: RiskPlan) {
             Text(plan.reason, style = MaterialTheme.typography.bodySmall)
         }
     }
+}
+
+@Composable
+private fun PaperTradingCard(
+    portfolio: PaperPortfolio,
+    selectedSymbol: String,
+    selectedPosition: PaperPosition?,
+    unrealizedPnl: Double?,
+    feed: MarketDataFeed,
+    analysis: MarketAnalysis,
+    marketHealth: MarketHealthAssessment,
+    riskPlan: RiskPlan,
+    pointSize: Double?,
+    pointValuePerLot: Double?,
+    stopPoints: Double?,
+    startingBalance: Double?,
+    message: String?,
+    onOpen: () -> Unit,
+    onClose: (PaperPosition) -> Unit,
+    onReset: () -> Unit,
+) {
+    val quoteIsValid = feed.state == FeedState.LIVE &&
+        feed.bid != null && feed.ask != null && feed.bid > 0 && feed.ask >= feed.bid
+    val openBlockReason = when {
+        selectedPosition != null -> "One paper position per symbol is already open."
+        feed.state != FeedState.LIVE -> "Live data is required to open a paper position."
+        marketHealth.level != MarketHealthLevel.READY -> {
+            "Market health must be Ready before opening a paper position."
+        }
+        analysis.direction == Direction.WAIT -> "A Buy or Sell analysis direction is required."
+        !riskPlan.allowed || riskPlan.suggestedLot == null -> riskPlan.reason
+        !quoteIsValid -> "A valid live bid and ask are required."
+        pointSize == null || pointSize <= 0 -> "Enter a valid price-units-per-point value."
+        pointValuePerLot == null || pointValuePerLot <= 0 -> "Enter a valid point value."
+        stopPoints == null || stopPoints <= 0 -> "Enter a valid planned stop distance."
+        startingBalance == null || startingBalance < 15 -> {
+            "Paper starting balance must be at least USD 15."
+        }
+        else -> null
+    }
+    val displayCash = portfolio.cashBalance ?: startingBalance
+    val paperAccent = Color(0xFF345995)
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = paperAccent.copy(alpha = 0.10f),
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("PAPER ONLY • LOCAL SIMULATION", color = paperAccent, fontWeight = FontWeight.Black)
+            Text(
+                "No request from this card is sent to MT5 or the backend.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column {
+                    Text("Paper cash", style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        displayCash?.let { "USD ${it.format(2)}" } ?: "Not started",
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("Realized P&L", style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        "USD ${portfolio.realizedPnl.format(2)}",
+                        color = paperPnlColor(portfolio.realizedPnl),
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+            Text("Open paper positions: ${portfolio.openPositions.size}")
+
+            if (selectedPosition == null) {
+                Button(
+                    onClick = onOpen,
+                    enabled = openBlockReason == null,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        "Open paper ${analysis.direction.label} " +
+                            "${riskPlan.suggestedLot?.format(2) ?: "—"} lot",
+                    )
+                }
+                openBlockReason?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                Text(
+                    "$selectedSymbol ${selectedPosition.direction.label.uppercase(Locale.US)} " +
+                        "${selectedPosition.lotSize.format(2)} lot",
+                    fontWeight = FontWeight.Black,
+                )
+                Text("Entry ${selectedPosition.entryPrice.format(4)}")
+                Text(
+                    "Planned stop ${selectedPosition.plannedStopPoints.format(1)} points • " +
+                        "max loss USD ${selectedPosition.maximumPlannedLoss.format(2)}",
+                )
+                Text(
+                    text = unrealizedPnl?.let { "Open P&L: USD ${it.format(2)}" }
+                        ?: "Open P&L unavailable until a live quote is present.",
+                    color = paperPnlColor(unrealizedPnl ?: 0.0),
+                    fontWeight = FontWeight.Bold,
+                )
+                Button(
+                    onClick = { onClose(selectedPosition) },
+                    enabled = quoteIsValid,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Close paper position at live quote")
+                }
+            }
+
+            message?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+            }
+
+            if (portfolio.closedTrades.isNotEmpty()) {
+                Text("Recent paper history", fontWeight = FontWeight.Bold)
+                portfolio.closedTrades.take(3).forEach { trade ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            "${trade.symbol} ${trade.direction.label} " +
+                                "${trade.lotSize.format(2)} lot",
+                        )
+                        Text(
+                            "USD ${trade.realizedPnl.format(2)}",
+                            color = paperPnlColor(trade.realizedPnl),
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
+
+            if (portfolio.openPositions.isEmpty() && portfolio.startingBalance != null) {
+                OutlinedButton(
+                    onClick = onReset,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Reset local paper portfolio")
+                }
+            }
+            Text(
+                "Paper P&L uses the entered point size/value and excludes commission, swaps, " +
+                    "slippage, margin calls, and automatic stop execution.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun paperPnlColor(value: Double): Color = when {
+    value > 0 -> Color(0xFF006C4C)
+    value < 0 -> MaterialTheme.colorScheme.error
+    else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
 @Composable
