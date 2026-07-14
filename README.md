@@ -22,6 +22,8 @@ backends.
 - Backend-driven multi-symbol selection and opt-in 30/60-minute setup alerts
 - Explainable market readiness from source, freshness, relative spread, and
   timeframe agreement
+- An isolated on-device paper ledger with spread-aware simulated entry/exit,
+  mark-to-market P&L, and closed-trade history
 - A read-only MT5 EA that publishes quotes and indicator snapshots
 - A FastAPI ingestion service with token authentication and stale-data status
 - Durable snapshot history and case-insensitive watchlists with Alembic
@@ -65,11 +67,14 @@ For production persistence and watchlist administration, see
 behavior is documented in
 [docs/android-notifications.md](docs/android-notifications.md). Readiness scoring
 and confidence language are specified in
-[docs/market-health.md](docs/market-health.md).
+[docs/market-health.md](docs/market-health.md). The local simulation boundary is
+documented in [docs/paper-trading.md](docs/paper-trading.md).
 
 ## Roadmap
 
-1. Add paper trading before any opt-in execution feature is considered.
+1. Add paper-performance export and replay validation.
+2. Keep broker execution out of scope until paper behavior is validated and a
+   separate security design is reviewed.
 
 Trading involves substantial risk. Analysis and forecasts are not guarantees,
 and the app must not increase a position merely to meet a broker minimum.
