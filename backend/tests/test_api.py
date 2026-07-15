@@ -109,6 +109,37 @@ def test_ingests_and_returns_latest_snapshot() -> None:
     assert latest.json()["snapshot"]["symbol"] == "XAUUSD"
 
 
+def test_returns_bounded_snapshot_history_in_chronological_order() -> None:
+    client = make_client()
+    headers = {"X-Bridge-Token": "test-bridge-token"}
+    for captured_at in (
+        "2026-07-14T11:57:30Z",
+        "2026-07-14T11:58:30Z",
+        "2026-07-14T11:59:30Z",
+    ):
+        assert client.post(
+            "/api/v1/market-data/mt5/snapshots",
+            json=snapshot_payload(captured_at),
+            headers=headers,
+        ).status_code == 202
+
+    history = client.get("/api/v1/market-data/xauusd/history?limit=2")
+
+    assert history.status_code == 200
+    assert [item["captured_at"] for item in history.json()["items"]] == [
+        "2026-07-14T11:58:30Z",
+        "2026-07-14T11:59:30Z",
+    ]
+
+
+def test_history_limit_is_validated_and_missing_symbol_is_empty() -> None:
+    client = make_client()
+
+    assert client.get("/api/v1/market-data/XAUUSD/history?limit=1").status_code == 422
+    assert client.get("/api/v1/market-data/XAUUSD/history?limit=501").status_code == 422
+    assert client.get("/api/v1/market-data/XAUUSD/history").json() == {"items": []}
+
+
 def test_rejects_duplicate_or_out_of_order_snapshot() -> None:
     client = make_client()
     headers = {"X-Bridge-Token": "test-bridge-token"}

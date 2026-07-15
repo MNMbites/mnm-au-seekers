@@ -3,7 +3,7 @@ from __future__ import annotations
 import hmac
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
 
 from backend.app.config import Settings
 from backend.app.database import SqlAlchemyMarketDataRepository
@@ -11,6 +11,7 @@ from backend.app.models import (
     IngestResult,
     MarketDataEnvelope,
     MarketSnapshot,
+    MarketSnapshotHistoryResponse,
     WatchlistEntry,
     WatchlistResponse,
     validated_symbol,
@@ -39,8 +40,8 @@ def create_app(
 
     app = FastAPI(
         title="MNM AU Seekers Market Data API",
-        version="0.4.0",
-        description="Read-only MT5 market data with durable watchlists.",
+        version="0.5.0",
+        description="Read-only MT5 market data with bounded historical replay inputs.",
     )
 
     def authorize_bridge(
@@ -128,6 +129,19 @@ def create_app(
                 detail="No market data is available for this symbol",
             )
         return snapshot
+
+    @app.get(
+        "/api/v1/market-data/{symbol}/history",
+        response_model=MarketSnapshotHistoryResponse,
+        tags=["market-data"],
+    )
+    def snapshot_history(
+        symbol: str,
+        limit: int = Query(default=100, ge=2, le=500),
+    ) -> MarketSnapshotHistoryResponse:
+        return MarketSnapshotHistoryResponse(
+            items=repository.history(normalize_path_symbol(symbol), limit),
+        )
 
     @app.get(
         "/api/v1/watchlist",

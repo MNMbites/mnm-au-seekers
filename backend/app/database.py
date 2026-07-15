@@ -127,6 +127,19 @@ class SqlAlchemyMarketDataRepository:
             snapshot=snapshot,
         )
 
+    def history(self, symbol: str, limit: int) -> list[MarketSnapshot]:
+        with self._sessions() as session:
+            records = session.scalars(
+                select(MarketSnapshotRecord)
+                .where(MarketSnapshotRecord.symbol_key == symbol.casefold())
+                .order_by(MarketSnapshotRecord.captured_at.desc())
+                .limit(limit)
+            ).all()
+        return [
+            MarketSnapshot.model_validate(record.payload)
+            for record in reversed(records)
+        ]
+
     def list_watchlist(self) -> list[WatchlistEntry]:
         with self._sessions() as session:
             records = session.scalars(

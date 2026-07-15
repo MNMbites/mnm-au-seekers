@@ -27,6 +27,20 @@ Keep both tokens and the database URL in the deployment secret manager. Do not
 reuse the bridge token for watchlist administration or expose either token to
 the Android app.
 
+## Snapshot history API
+
+The read-only history route returns the newest requested records in
+chronological order:
+
+```text
+GET /api/v1/market-data/XAUUSD/history?limit=100
+```
+
+`limit` must be from 2 through 500. An unknown symbol returns an empty `items`
+array. The in-memory development repository retains at most 500 snapshots per
+symbol; PostgreSQL retains rows according to deployment retention policy and
+applies the requested bound at query time.
+
 ## Watchlist API
 
 Reading the watchlist is intentionally public, matching the market-data read

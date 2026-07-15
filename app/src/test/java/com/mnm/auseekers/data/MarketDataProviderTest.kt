@@ -22,6 +22,22 @@ class MarketDataProviderTest {
     }
 
     @Test
+    fun parsesChronologicalHistoryPayload() {
+        val history = parser.parseHistory(
+            """
+                {"items": [
+                  ${snapshot("2026-07-14T11:58:30Z", 2419.20)},
+                  ${snapshot("2026-07-14T11:59:30Z", 2420.20)}
+                ]}
+            """.trimIndent(),
+        )
+
+        assertEquals(2, history.size)
+        assertEquals(2419.10, history.first().bid, 0.0001)
+        assertTrue(history.first().capturedAt < history.last().capturedAt)
+    }
+
+    @Test
     fun rejectsPayloadWithoutEveryRequiredTimeframe() {
         val invalid = validEnvelope().replace(
             "\"timeframe\": \"H4\"",
@@ -45,10 +61,12 @@ class MarketDataProviderTest {
         val provider = FallbackMarketDataProvider(unavailable)
 
         val feed = provider.latest("XAUUSD")
+        val history = provider.history("XAUUSD")
 
         assertEquals(FeedState.DEMO, feed.state)
         assertEquals(3, feed.snapshots.size)
         assertTrue(feed.statusMessage.contains("unavailable"))
+        assertTrue(history.isEmpty())
     }
 
     @Test
@@ -99,6 +117,22 @@ class MarketDataProviderTest {
               ${timeframe("H4", 2412.80)}
             ]
           }
+        }
+    """.trimIndent()
+
+    private fun snapshot(capturedAt: String, midpoint: Double): String = """
+        {
+          "schema_version": "1.0",
+          "source": "mt5",
+          "symbol": "XAUUSD",
+          "captured_at": "$capturedAt",
+          "bid": ${midpoint - 0.10},
+          "ask": ${midpoint + 0.10},
+          "timeframes": [
+            ${timeframe("M15", midpoint)},
+            ${timeframe("H1", midpoint)},
+            ${timeframe("H4", midpoint)}
+          ]
         }
     """.trimIndent()
 

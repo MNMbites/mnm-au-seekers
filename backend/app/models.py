@@ -83,6 +83,10 @@ class MarketDataEnvelope(BaseModel):
     snapshot: MarketSnapshot
 
 
+class MarketSnapshotHistoryResponse(BaseModel):
+    items: list[MarketSnapshot]
+
+
 class WatchlistEntry(BaseModel):
     symbol: str
     created_at: datetime

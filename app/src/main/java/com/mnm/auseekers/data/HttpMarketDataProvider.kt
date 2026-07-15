@@ -21,6 +21,14 @@ class HttpMarketDataProvider(
     override suspend fun watchlist(): List<String> = withContext(Dispatchers.IO) {
         parser.parseWatchlist(transport.watchlist())
     }
+
+    override suspend fun history(
+        symbol: String,
+        limit: Int,
+    ): List<HistoricalMarketDataPoint> = withContext(Dispatchers.IO) {
+        require(limit in 2..500) { "Market-data history limit must be from 2 to 500" }
+        parser.parseHistory(transport.history(symbol, limit))
+    }
 }
 
 internal class HttpMarketDataTransport(baseUrl: String) {
@@ -39,6 +47,11 @@ internal class HttpMarketDataTransport(baseUrl: String) {
     }
 
     fun watchlist(): String = get("/api/v1/watchlist")
+
+    fun history(symbol: String, limit: Int): String {
+        val encodedSymbol = URLEncoder.encode(symbol, StandardCharsets.UTF_8.toString())
+        return get("/api/v1/market-data/$encodedSymbol/history?limit=$limit")
+    }
 
     private fun get(path: String): String {
         val connection = URI("$normalizedBaseUrl$path")

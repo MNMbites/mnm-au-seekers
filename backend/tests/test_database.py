@@ -35,6 +35,25 @@ def test_snapshots_persist_and_lookup_is_case_insensitive(tmp_path) -> None:
     assert restored.snapshot == snapshot
 
 
+def test_database_history_is_bounded_and_chronological(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'market-data.db'}"
+    store = repository(database_url)
+    captured = (
+        "2026-07-14T11:57:30Z",
+        "2026-07-14T11:58:30Z",
+        "2026-07-14T11:59:30Z",
+    )
+    for captured_at in captured:
+        store.upsert(MarketSnapshot.model_validate(snapshot_payload(captured_at)))
+
+    history = store.history("xauusd", limit=2)
+
+    assert [snapshot.captured_at.isoformat() for snapshot in history] == [
+        "2026-07-14T11:58:30+00:00",
+        "2026-07-14T11:59:30+00:00",
+    ]
+
+
 def test_database_rejects_duplicate_or_older_snapshots(tmp_path) -> None:
     database_url = f"sqlite:///{tmp_path / 'market-data.db'}"
     store = repository(database_url)

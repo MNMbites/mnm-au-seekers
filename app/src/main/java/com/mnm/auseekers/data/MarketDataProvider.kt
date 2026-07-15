@@ -23,11 +23,22 @@ data class MarketDataFeed(
     val statusMessage: String,
 )
 
+data class HistoricalMarketDataPoint(
+    val symbol: String,
+    val capturedAt: Instant,
+    val bid: Double,
+    val ask: Double,
+    val snapshots: List<MarketSnapshot>,
+)
+
 /** Boundary shared by bundled demo data and the versioned backend transport. */
 interface MarketDataProvider {
     suspend fun latest(symbol: String): MarketDataFeed
 
     suspend fun watchlist(): List<String>
+
+    suspend fun history(symbol: String, limit: Int = 100): List<HistoricalMarketDataPoint> =
+        emptyList()
 }
 
 class DemoMarketDataProvider(
@@ -71,6 +82,17 @@ class FallbackMarketDataProvider(
         throw error
     } catch (error: Exception) {
         fallback.watchlist()
+    }
+
+    override suspend fun history(
+        symbol: String,
+        limit: Int,
+    ): List<HistoricalMarketDataPoint> = try {
+        primary.history(symbol, limit)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        emptyList()
     }
 }
 
