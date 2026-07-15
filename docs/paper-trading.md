@@ -38,13 +38,31 @@ P&L = move in points × USD per point per lot × lot size
 ```
 
 Manual paper closure uses the same quote side and stores entry, exit, realized
-P&L, size, direction, and timestamps. Up to 100 recent closed trades are kept.
+P&L, size, direction, point size/value, planned risk, and timestamps. Up to 100
+recent closed trades are kept.
 The portfolio can be reset only after every paper position is closed.
 
 The calculation intentionally does not invent unavailable broker behavior. It
 does not simulate commissions, swaps, slippage, partial fills, margin calls, or
 automatic stop execution. Point size and point value must match the selected
 broker symbol or the displayed P&L will be wrong.
+
+## Replay audit and CSV sharing
+
+For each closed trade, the app deterministically recomputes P&L from direction,
+entry, exit, point size, point value, and lot size. A verified report means every
+stored result matches that replay within floating-point tolerance. Missing
+legacy inputs, invalid timestamps, or a changed P&L produce `Needs review` and
+identify the affected trade.
+
+The audit also reports closed-trade count, historical wins/losses, historical
+win rate, net P&L, and maximum realized-equity drawdown. These describe only the
+local paper sample and are not a forecast or probability estimate.
+
+`Share paper audit CSV` sends a text CSV through Android's system share sheet.
+It requires no storage permission, creates no backend upload, and includes the
+summary plus every replay input. Text fields beginning with spreadsheet formula
+characters are neutralized before export.
 
 ## Isolation boundary
 
@@ -54,6 +72,8 @@ broker symbol or the displayed P&L will be wrong.
   stored.
 - Android backup remains disabled, and the paper portfolio is local app data.
 - Removing app data or uninstalling the app removes the portfolio.
+- CSV data leaves the app only after the user explicitly chooses a destination
+  in Android's share sheet.
 
 Paper results are hypothetical and are not evidence of future live performance.
 Broker execution remains outside this milestone and requires separate design,

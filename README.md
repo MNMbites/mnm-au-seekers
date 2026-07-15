@@ -24,6 +24,8 @@ backends.
   timeframe agreement
 - An isolated on-device paper ledger with spread-aware simulated entry/exit,
   mark-to-market P&L, and closed-trade history
+- Deterministic paper-P&L replay, drawdown statistics, and user-initiated CSV
+  sharing
 - A read-only MT5 EA that publishes quotes and indicator snapshots
 - A FastAPI ingestion service with token authentication and stale-data status
 - Durable snapshot history and case-insensitive watchlists with Alembic
@@ -72,8 +74,9 @@ documented in [docs/paper-trading.md](docs/paper-trading.md).
 
 ## Roadmap
 
-1. Add paper-performance export and replay validation.
-2. Keep broker execution out of scope until paper behavior is validated and a
+1. Review and merge the stacked milestones in dependency order.
+2. Validate paper behavior on physical devices and MT5 demo feeds.
+3. Keep broker execution out of scope until paper behavior is validated and a
    separate security design is reviewed.
 
 Trading involves substantial risk. Analysis and forecasts are not guarantees,
