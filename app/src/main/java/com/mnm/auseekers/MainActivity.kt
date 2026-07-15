@@ -73,6 +73,11 @@ import com.mnm.auseekers.domain.RiskRequest
 import com.mnm.auseekers.domain.SignalEngine
 import com.mnm.auseekers.domain.TimeframeSignal
 import com.mnm.auseekers.domain.TradingMode
+import com.mnm.auseekers.journal.AddAnalysisJournalEntry
+import com.mnm.auseekers.journal.AnalysisJournal
+import com.mnm.auseekers.journal.AnalysisJournalStatistics
+import com.mnm.auseekers.journal.AnalysisJournalStatisticsCalculator
+import com.mnm.auseekers.journal.AndroidAnalysisJournalRepository
 import com.mnm.auseekers.notifications.NotificationInterval
 import com.mnm.auseekers.notifications.SetupNotificationScheduler
 import com.mnm.auseekers.paper.AndroidPaperTradingRepository
@@ -84,6 +89,9 @@ import com.mnm.auseekers.paper.PaperPerformanceReport
 import com.mnm.auseekers.paper.PaperPortfolio
 import com.mnm.auseekers.paper.PaperPosition
 import com.mnm.auseekers.ui.theme.MnmAuSeekersTheme
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -127,6 +135,15 @@ private fun MnmAuSeekersApp(
     var paperMessage by rememberSaveable { mutableStateOf<String?>(null) }
     val paperReport = remember(paperPortfolio) {
         PaperPerformanceAnalyzer().analyze(paperPortfolio)
+    }
+    val journalRepository = remember(context) {
+        AndroidAnalysisJournalRepository(context.applicationContext)
+    }
+    var journal by remember { mutableStateOf(journalRepository.load()) }
+    var journalNote by rememberSaveable { mutableStateOf("") }
+    var journalMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    val journalStatistics = remember(journal) {
+        AnalysisJournalStatisticsCalculator().calculate(journal)
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -253,6 +270,43 @@ private fun MnmAuSeekersApp(
             }
             item { AnalysisCard(analysis) }
             item { MarketHealthCard(marketHealth) }
+            item {
+                AnalysisJournalCard(
+                    journal = journal,
+                    statistics = journalStatistics,
+                    note = journalNote,
+                    message = journalMessage,
+                    onNoteChange = { journalNote = it.take(280) },
+                    onSave = {
+                        runCatching {
+                            journalRepository.add(
+                                AddAnalysisJournalEntry(
+                                    symbol = selectedSymbol,
+                                    mode = mode,
+                                    direction = analysis.direction,
+                                    stage = analysis.stage,
+                                    signalStrength = analysis.strength,
+                                    rationale = analysis.rationale,
+                                    marketHealthLevel = marketHealth.level,
+                                    marketHealthScore = marketHealth.score,
+                                    confidenceLabel = marketHealth.confidenceLabel,
+                                    feedState = feed.state,
+                                    bid = feed.bid,
+                                    ask = feed.ask,
+                                    feedCapturedAtEpochMillis = feed.capturedAt?.toEpochMilli(),
+                                    note = journalNote,
+                                ),
+                            )
+                        }.onSuccess {
+                            journal = it
+                            journalNote = ""
+                            journalMessage = "Current analysis saved to the local journal."
+                        }.onFailure {
+                            journalMessage = it.message ?: "Analysis could not be journaled."
+                        }
+                    },
+                )
+            }
             item {
                 NotificationSettings(
                     selected = notificationInterval,
@@ -396,6 +450,115 @@ private fun MnmAuSeekersApp(
         }
     }
 }
+
+@Composable
+private fun AnalysisJournalCard(
+    journal: AnalysisJournal,
+    statistics: AnalysisJournalStatistics,
+    note: String,
+    message: String?,
+    onNoteChange: (String) -> Unit,
+    onSave: () -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("ANALYSIS JOURNAL • LOCAL", fontWeight = FontWeight.Black)
+            Text(
+                "Save a manual snapshot of the current analysis and why you chose to wait " +
+                    "or act in paper mode.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (statistics.entryCount > 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    JournalMetric("Entries", statistics.entryCount.toString())
+                    JournalMetric("Ready", statistics.readyCount.toString())
+                    JournalMetric(
+                        "Avg health",
+                        statistics.averageHealthScore?.let { "${it.format(1)}/100" } ?: "—",
+                        Alignment.End,
+                    )
+                }
+                Text(
+                    "Recorded direction: ${statistics.buyCount} Buy • " +
+                        "${statistics.sellCount} Sell • ${statistics.waitCount} Wait • " +
+                        "${statistics.confirmedCount} confirmed",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            OutlinedTextField(
+                value = note,
+                onValueChange = onNoteChange,
+                label = { Text("Optional review note") },
+                supportingText = { Text("${note.length}/280") },
+                minLines = 2,
+                maxLines = 4,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(
+                onClick = onSave,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Save current analysis snapshot")
+            }
+            message?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall)
+            }
+            journal.entries.take(3).forEach { entry ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        "${entry.symbol} • ${entry.direction.label} • ${entry.stage.label}",
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "${formatJournalTime(entry.recordedAtEpochMillis)} • " +
+                            "${entry.feedState.name.lowercase(Locale.US)} • " +
+                            "${entry.marketHealthLevel.label} ${entry.marketHealthScore}/100",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                    Text(
+                        "${entry.confidenceLabel} • signal ${entry.signalStrength}%" +
+                            entry.bid?.let { bid ->
+                                entry.ask?.let { ask ->
+                                    " • bid ${bid.format(2)} / ask ${ask.format(2)}"
+                                }
+                            }.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (entry.note.isNotEmpty()) {
+                        Text(entry.note, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            Text(
+                "Journal counts describe saved observations only; they do not measure " +
+                    "profitability or predict an outcome.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun JournalMetric(
+    label: String,
+    value: String,
+    alignment: Alignment.Horizontal = Alignment.Start,
+) {
+    Column(horizontalAlignment = alignment) {
+        Text(label, style = MaterialTheme.typography.labelMedium)
+        Text(value, fontWeight = FontWeight.Bold)
+    }
+}
+
+private fun formatJournalTime(epochMillis: Long): String =
+    JOURNAL_TIME_FORMATTER.format(Instant.ofEpochMilli(epochMillis))
 
 @Composable
 private fun ConnectionBanner(
@@ -994,6 +1157,10 @@ private fun directionColor(direction: Direction): Color = when (direction) {
 }
 
 private fun Double.format(decimals: Int): String = String.format(Locale.US, "%.${decimals}f", this)
+
+private val JOURNAL_TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter
+    .ofPattern("MMM d, HH:mm", Locale.US)
+    .withZone(ZoneId.systemDefault())
 
 private fun String.numericInput(): String = filterIndexed { index, character ->
     character.isDigit() || (character == '.' && index == indexOf('.'))

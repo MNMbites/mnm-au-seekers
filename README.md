@@ -26,6 +26,8 @@ backends.
   mark-to-market P&L, and closed-trade history
 - Deterministic paper-P&L replay, drawdown statistics, and user-initiated CSV
   sharing
+- A private, manual analysis journal with optional review notes and descriptive
+  snapshot statistics
 - A read-only MT5 EA that publishes quotes and indicator snapshots
 - A FastAPI ingestion service with token authentication and stale-data status
 - Durable snapshot history and case-insensitive watchlists with Alembic
@@ -71,6 +73,8 @@ behavior is documented in
 and confidence language are specified in
 [docs/market-health.md](docs/market-health.md). The local simulation boundary is
 documented in [docs/paper-trading.md](docs/paper-trading.md).
+Manual analysis-journal behavior and privacy boundaries are documented in
+[docs/analysis-journal.md](docs/analysis-journal.md).
 
 ## Roadmap
 
