@@ -2,6 +2,7 @@ package com.mnm.auseekers
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -76,6 +77,10 @@ import com.mnm.auseekers.notifications.NotificationInterval
 import com.mnm.auseekers.notifications.SetupNotificationScheduler
 import com.mnm.auseekers.paper.AndroidPaperTradingRepository
 import com.mnm.auseekers.paper.OpenPaperTradeRequest
+import com.mnm.auseekers.paper.PaperAuditStatus
+import com.mnm.auseekers.paper.PaperCsvExporter
+import com.mnm.auseekers.paper.PaperPerformanceAnalyzer
+import com.mnm.auseekers.paper.PaperPerformanceReport
 import com.mnm.auseekers.paper.PaperPortfolio
 import com.mnm.auseekers.paper.PaperPosition
 import com.mnm.auseekers.ui.theme.MnmAuSeekersTheme
@@ -120,6 +125,9 @@ private fun MnmAuSeekersApp(
     }
     var paperPortfolio by remember { mutableStateOf(paperRepository.load()) }
     var paperMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    val paperReport = remember(paperPortfolio) {
+        PaperPerformanceAnalyzer().analyze(paperPortfolio)
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -306,6 +314,7 @@ private fun MnmAuSeekersApp(
                 }
                 PaperTradingCard(
                     portfolio = paperPortfolio,
+                    performanceReport = paperReport,
                     selectedSymbol = selectedSymbol,
                     selectedPosition = selectedPosition,
                     unrealizedPnl = unrealizedPnl,
@@ -370,6 +379,16 @@ private fun MnmAuSeekersApp(
                             .onFailure {
                                 paperMessage = it.message ?: "Paper portfolio could not be reset."
                             }
+                    },
+                    onExport = {
+                        runCatching {
+                            val csv = PaperCsvExporter().export(paperPortfolio, paperReport)
+                            sharePaperCsv(context, csv)
+                        }.onSuccess {
+                            paperMessage = "Paper audit CSV opened in the Android share sheet."
+                        }.onFailure {
+                            paperMessage = it.message ?: "Paper audit CSV could not be shared."
+                        }
                     },
                 )
             }
@@ -713,6 +732,7 @@ private fun RiskCard(plan: RiskPlan) {
 @Composable
 private fun PaperTradingCard(
     portfolio: PaperPortfolio,
+    performanceReport: PaperPerformanceReport,
     selectedSymbol: String,
     selectedPosition: PaperPosition?,
     unrealizedPnl: Double?,
@@ -728,6 +748,7 @@ private fun PaperTradingCard(
     onOpen: () -> Unit,
     onClose: (PaperPosition) -> Unit,
     onReset: () -> Unit,
+    onExport: () -> Unit,
 ) {
     val quoteIsValid = feed.state == FeedState.LIVE &&
         feed.bid != null && feed.ask != null && feed.bid > 0 && feed.ask >= feed.bid
@@ -835,6 +856,69 @@ private fun PaperTradingCard(
                 Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
             }
 
+            Text("Paper replay audit", fontWeight = FontWeight.Bold)
+            Text(
+                performanceReport.status.label,
+                color = paperAuditColor(performanceReport.status),
+                fontWeight = FontWeight.Black,
+            )
+            if (performanceReport.tradeCount > 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column {
+                        Text("Closed", style = MaterialTheme.typography.labelMedium)
+                        Text(performanceReport.tradeCount.toString(), fontWeight = FontWeight.Bold)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Historical W/L", style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            "${performanceReport.wins}/${performanceReport.losses}",
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("Max drawdown", style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            "USD ${performanceReport.maximumDrawdown.format(2)}",
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+                Text(
+                    "Historical win rate: " +
+                        "${performanceReport.historicalWinRatePercent?.format(1) ?: "—"}% • " +
+                        "Net USD ${performanceReport.reportedNetPnl.format(2)}",
+                )
+                performanceReport.replayedNetPnl?.let {
+                    Text(
+                        "Replayed net USD ${it.format(2)} matches stored trade inputs.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                performanceReport.issues.firstOrNull()?.let { issue ->
+                    Text(
+                        "${performanceReport.issues.size} audit issue(s). " +
+                            "${issue.tradeId}: ${issue.detail}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                OutlinedButton(
+                    onClick = onExport,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Share paper audit CSV")
+                }
+                Text(
+                    "Historical paper results describe this local sample; they do not forecast " +
+                        "future performance.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
             if (portfolio.closedTrades.isNotEmpty()) {
                 Text("Recent paper history", fontWeight = FontWeight.Bold)
                 portfolio.closedTrades.take(3).forEach { trade ->
@@ -878,6 +962,13 @@ private fun paperPnlColor(value: Double): Color = when {
     value > 0 -> Color(0xFF006C4C)
     value < 0 -> MaterialTheme.colorScheme.error
     else -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+@Composable
+private fun paperAuditColor(status: PaperAuditStatus): Color = when (status) {
+    PaperAuditStatus.EMPTY -> MaterialTheme.colorScheme.onSurfaceVariant
+    PaperAuditStatus.VERIFIED -> Color(0xFF006C4C)
+    PaperAuditStatus.NEEDS_REVIEW -> MaterialTheme.colorScheme.error
 }
 
 @Composable
@@ -943,3 +1034,14 @@ private fun notificationPermissionGranted(context: Context): Boolean =
             context,
             Manifest.permission.POST_NOTIFICATIONS,
         ) == PackageManager.PERMISSION_GRANTED
+
+private fun sharePaperCsv(context: Context, csv: String) {
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/csv"
+        putExtra(Intent.EXTRA_SUBJECT, "MNM AU Seekers paper audit")
+        putExtra(Intent.EXTRA_TEXT, csv)
+    }
+    context.startActivity(
+        Intent.createChooser(shareIntent, "Share paper audit CSV"),
+    )
+}
