@@ -5,7 +5,13 @@ from datetime import UTC, datetime
 from threading import RLock
 from typing import Protocol
 
-from backend.app.models import MarketDataEnvelope, MarketSnapshot, WatchlistEntry
+from backend.app.models import (
+    EconomicCalendarEvent,
+    EconomicCalendarUpdate,
+    MarketDataEnvelope,
+    MarketSnapshot,
+    WatchlistEntry,
+)
 
 
 class OutOfOrderSnapshotError(ValueError):
@@ -20,6 +26,15 @@ class MarketDataRepository(Protocol):
     def latest(self, symbol: str) -> MarketDataEnvelope | None: ...
 
     def history(self, symbol: str, limit: int) -> list[MarketSnapshot]: ...
+
+    def upsert_calendar(self, update: EconomicCalendarUpdate) -> None: ...
+
+    def calendar_events(
+        self,
+        currencies: set[str],
+        starts_at: datetime,
+        ends_at: datetime,
+    ) -> list[EconomicCalendarEvent]: ...
 
     def list_watchlist(self) -> list[WatchlistEntry]: ...
 
@@ -47,6 +62,7 @@ class SnapshotStore:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._snapshots: dict[str, list[tuple[MarketSnapshot, datetime]]] = {}
         self._watchlist: dict[str, WatchlistEntry] = {}
+        self._calendar_events: dict[str, EconomicCalendarEvent] = {}
         self._lock = RLock()
 
     def upsert(self, snapshot: MarketSnapshot) -> None:
@@ -83,6 +99,29 @@ class SnapshotStore:
             history = self._snapshots.get(symbol.casefold(), [])
             return [snapshot for snapshot, _ in history[-limit:]]
 
+    def upsert_calendar(self, update: EconomicCalendarUpdate) -> None:
+        with self._lock:
+            for event in update.events:
+                key = f"{event.source.casefold()}:{event.event_id.casefold()}"
+                self._calendar_events[key] = event
+
+    def calendar_events(
+        self,
+        currencies: set[str],
+        starts_at: datetime,
+        ends_at: datetime,
+    ) -> list[EconomicCalendarEvent]:
+        with self._lock:
+            return sorted(
+                (
+                    event
+                    for event in self._calendar_events.values()
+                    if event.currency in currencies and
+                    starts_at <= event.scheduled_at <= ends_at
+                ),
+                key=lambda event: event.scheduled_at,
+            )[:CALENDAR_READ_LIMIT]
+
     def list_watchlist(self) -> list[WatchlistEntry]:
         with self._lock:
             return sorted(
@@ -112,3 +151,4 @@ class SnapshotStore:
 
 
 MEMORY_HISTORY_LIMIT = 500
+CALENDAR_READ_LIMIT = 500

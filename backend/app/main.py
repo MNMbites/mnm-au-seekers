@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
@@ -8,6 +9,9 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, st
 from backend.app.config import Settings
 from backend.app.database import SqlAlchemyMarketDataRepository
 from backend.app.models import (
+    EconomicCalendarIngestResult,
+    EconomicCalendarResponse,
+    EconomicCalendarUpdate,
     IngestResult,
     MarketDataEnvelope,
     MarketSnapshot,
@@ -40,8 +44,8 @@ def create_app(
 
     app = FastAPI(
         title="MNM AU Seekers Market Data API",
-        version="0.5.0",
-        description="Read-only MT5 market data with bounded historical replay inputs.",
+        version="0.6.0",
+        description="Read-only MT5 market data with calendar risk context.",
     )
 
     def authorize_bridge(
@@ -77,6 +81,24 @@ def create_app(
                 detail="Invalid admin token",
             )
 
+    def authorize_economic_calendar(
+        token: Annotated[str | None, Header(alias="X-Calendar-Token")] = None,
+    ) -> None:
+        expected = runtime_settings.economic_calendar_token
+        if expected is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Calendar ingestion is disabled until "
+                    "ECONOMIC_CALENDAR_TOKEN is configured"
+                ),
+            )
+        if token is None or not hmac.compare_digest(token, expected):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid calendar token",
+            )
+
     def normalize_path_symbol(symbol: str) -> str:
         try:
             return validated_symbol(symbol)
@@ -94,6 +116,9 @@ def create_app(
             "storage": repository.storage_kind,
             "watchlist_writes": (
                 "enabled" if runtime_settings.watchlist_admin_token else "disabled"
+            ),
+            "calendar_ingestion": (
+                "enabled" if runtime_settings.economic_calendar_token else "disabled"
             ),
         }
 
@@ -141,6 +166,64 @@ def create_app(
     ) -> MarketSnapshotHistoryResponse:
         return MarketSnapshotHistoryResponse(
             items=repository.history(normalize_path_symbol(symbol), limit),
+        )
+
+    @app.post(
+        "/api/v1/economic-calendar/events",
+        response_model=EconomicCalendarIngestResult,
+        status_code=status.HTTP_202_ACCEPTED,
+        tags=["economic-calendar"],
+    )
+    def ingest_economic_calendar(
+        update: EconomicCalendarUpdate,
+        _: None = Depends(authorize_economic_calendar),
+    ) -> EconomicCalendarIngestResult:
+        repository.upsert_calendar(update)
+        return EconomicCalendarIngestResult(
+            event_count=len(update.events),
+            fetched_at=update.fetched_at,
+        )
+
+    @app.get(
+        "/api/v1/economic-calendar/events",
+        response_model=EconomicCalendarResponse,
+        tags=["economic-calendar"],
+    )
+    def list_economic_calendar(
+        currencies: str = Query(default="USD"),
+        starts_at: datetime = Query(alias="from"),
+        ends_at: datetime = Query(alias="to"),
+    ) -> EconomicCalendarResponse:
+        normalized_currencies = {
+            value.strip().upper()
+            for value in currencies.split(",")
+            if value.strip()
+        }
+        if not normalized_currencies or any(
+            len(value) != 3 or not value.isalpha()
+            for value in normalized_currencies
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="currencies must be a comma-separated list of three-letter codes",
+            )
+        if (
+            starts_at.tzinfo is None or starts_at.utcoffset() is None or
+            ends_at.tzinfo is None or ends_at.utcoffset() is None
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="calendar range must include timezones",
+            )
+        start = starts_at.astimezone(UTC)
+        end = ends_at.astimezone(UTC)
+        if end <= start or end - start > timedelta(days=7):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="calendar range must be positive and no longer than seven days",
+            )
+        return EconomicCalendarResponse(
+            items=repository.calendar_events(normalized_currencies, start, end),
         )
 
     @app.get(

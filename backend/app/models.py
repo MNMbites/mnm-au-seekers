@@ -13,6 +13,12 @@ class Timeframe(StrEnum):
     H4 = "H4"
 
 
+class EconomicImpact(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class TimeframeIndicators(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -85,6 +91,82 @@ class MarketDataEnvelope(BaseModel):
 
 class MarketSnapshotHistoryResponse(BaseModel):
     items: list[MarketSnapshot]
+
+
+class EconomicCalendarEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str = Field(min_length=1, max_length=128)
+    source: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=1, max_length=240)
+    currency: str = Field(min_length=3, max_length=3)
+    impact: EconomicImpact
+    scheduled_at: datetime
+
+    @field_validator("event_id", "source", "title")
+    @classmethod
+    def normalize_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("calendar text must not be blank")
+        return normalized
+
+    @field_validator("currency")
+    @classmethod
+    def normalize_currency(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not normalized.isalpha():
+            raise ValueError("calendar currency must contain three letters")
+        return normalized
+
+    @field_validator("scheduled_at")
+    @classmethod
+    def require_event_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("scheduled_at must include a timezone")
+        return value.astimezone(UTC)
+
+
+class EconomicCalendarUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str = Field(min_length=1, max_length=64)
+    fetched_at: datetime
+    events: list[EconomicCalendarEvent] = Field(max_length=500)
+
+    @field_validator("source")
+    @classmethod
+    def normalize_source(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("calendar source must not be blank")
+        return normalized
+
+    @field_validator("fetched_at")
+    @classmethod
+    def require_fetch_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("fetched_at must include a timezone")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def validate_update(self) -> "EconomicCalendarUpdate":
+        if any(event.source.casefold() != self.source.casefold() for event in self.events):
+            raise ValueError("every event source must match the update source")
+        keys = [event.event_id.casefold() for event in self.events]
+        if len(keys) != len(set(keys)):
+            raise ValueError("calendar event IDs must be unique within an update")
+        return self
+
+
+class EconomicCalendarIngestResult(BaseModel):
+    accepted: Literal[True] = True
+    event_count: int
+    fetched_at: datetime
+
+
+class EconomicCalendarResponse(BaseModel):
+    items: list[EconomicCalendarEvent]
 
 
 class WatchlistEntry(BaseModel):

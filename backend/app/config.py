@@ -15,6 +15,7 @@ class Settings:
 
     bridge_token: str | None = None
     watchlist_admin_token: str | None = None
+    economic_calendar_token: str | None = None
     database_url: str | None = None
     max_snapshot_age_seconds: int = 120
 
@@ -22,6 +23,7 @@ class Settings:
     def from_env(cls) -> "Settings":
         token = os.getenv("MT5_BRIDGE_TOKEN")
         admin_token = os.getenv("WATCHLIST_ADMIN_TOKEN")
+        calendar_token = os.getenv("ECONOMIC_CALENDAR_TOKEN")
         database_url = os.getenv("DATABASE_URL")
         max_age = int(os.getenv("MARKET_DATA_MAX_AGE_SECONDS", "120"))
         if max_age <= 0:
@@ -30,6 +32,11 @@ class Settings:
             bridge_token=token.strip() if token and token.strip() else None,
             watchlist_admin_token=(
                 admin_token.strip() if admin_token and admin_token.strip() else None
+            ),
+            economic_calendar_token=(
+                calendar_token.strip()
+                if calendar_token and calendar_token.strip()
+                else None
             ),
             database_url=(
                 database_url.strip() if database_url and database_url.strip() else None

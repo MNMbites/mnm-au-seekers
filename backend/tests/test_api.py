@@ -17,10 +17,12 @@ def make_client(
     token: str | None = "test-bridge-token",
     admin_token: str | None = "test-admin-token",
     max_age: int = 120,
+    calendar_token: str | None = "test-calendar-token",
 ) -> TestClient:
     settings = Settings(
         bridge_token=token,
         watchlist_admin_token=admin_token,
+        economic_calendar_token=calendar_token,
         max_snapshot_age_seconds=max_age,
     )
     store = SnapshotStore(max_snapshot_age_seconds=max_age, clock=lambda: NOW)
@@ -68,6 +70,7 @@ def test_health_reports_when_ingestion_is_disabled() -> None:
         "ingestion": "disabled",
         "storage": "memory",
         "watchlist_writes": "enabled",
+        "calendar_ingestion": "enabled",
     }
 
 
@@ -230,3 +233,75 @@ def test_watchlist_rejects_invalid_symbols() -> None:
     )
 
     assert response.status_code == 422
+
+
+def calendar_update() -> dict[str, object]:
+    return {
+        "source": "test-provider",
+        "fetched_at": "2026-07-14T11:00:00Z",
+        "events": [
+            {
+                "event_id": "us-cpi",
+                "source": "test-provider",
+                "title": "US CPI",
+                "currency": "usd",
+                "impact": "high",
+                "scheduled_at": "2026-07-14T12:30:00Z",
+            },
+            {
+                "event_id": "ecb-speech",
+                "source": "test-provider",
+                "title": "ECB speech",
+                "currency": "EUR",
+                "impact": "medium",
+                "scheduled_at": "2026-07-14T13:00:00Z",
+            },
+        ],
+    }
+
+
+def test_calendar_ingestion_uses_separate_token_and_reads_by_currency() -> None:
+    client = make_client()
+    invalid = client.post(
+        "/api/v1/economic-calendar/events",
+        json=calendar_update(),
+        headers={"X-Calendar-Token": "wrong"},
+    )
+    accepted = client.post(
+        "/api/v1/economic-calendar/events",
+        json=calendar_update(),
+        headers={"X-Calendar-Token": "test-calendar-token"},
+    )
+    listed = client.get(
+        "/api/v1/economic-calendar/events",
+        params={
+            "currencies": "USD",
+            "from": "2026-07-14T12:00:00Z",
+            "to": "2026-07-14T13:00:00Z",
+        },
+    )
+
+    assert invalid.status_code == 401
+    assert accepted.status_code == 202
+    assert accepted.json()["event_count"] == 2
+    assert [event["event_id"] for event in listed.json()["items"]] == ["us-cpi"]
+    assert listed.json()["items"][0]["currency"] == "USD"
+
+
+def test_calendar_ingestion_can_be_disabled_and_ranges_are_bounded() -> None:
+    disabled = make_client(calendar_token=None).post(
+        "/api/v1/economic-calendar/events",
+        json=calendar_update(),
+        headers={"X-Calendar-Token": "anything"},
+    )
+    too_wide = make_client().get(
+        "/api/v1/economic-calendar/events",
+        params={
+            "currencies": "USD",
+            "from": "2026-07-01T00:00:00Z",
+            "to": "2026-07-14T00:00:00Z",
+        },
+    )
+
+    assert disabled.status_code == 503
+    assert too_wide.status_code == 422

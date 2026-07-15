@@ -19,7 +19,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.models import MarketDataEnvelope, MarketSnapshot, WatchlistEntry
+from backend.app.models import (
+    EconomicCalendarEvent,
+    EconomicCalendarUpdate,
+    MarketDataEnvelope,
+    MarketSnapshot,
+    WatchlistEntry,
+)
 from backend.app.repository import OutOfOrderSnapshotError
 
 
@@ -48,6 +54,22 @@ class WatchlistRecord(Base):
     symbol_key: Mapped[str] = mapped_column(String(32), primary_key=True)
     symbol: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EconomicCalendarRecord(Base):
+    __tablename__ = "economic_calendar_events"
+    __table_args__ = (
+        Index("ix_calendar_currency_scheduled", "currency", "scheduled_at"),
+    )
+
+    event_key: Mapped[str] = mapped_column(String(256), primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(240), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    impact: Mapped[str] = mapped_column(String(16), nullable=False)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class SqlAlchemyMarketDataRepository:
@@ -138,6 +160,49 @@ class SqlAlchemyMarketDataRepository:
         return [
             MarketSnapshot.model_validate(record.payload)
             for record in reversed(records)
+        ]
+
+    def upsert_calendar(self, update: EconomicCalendarUpdate) -> None:
+        with self._sessions.begin() as session:
+            for event in update.events:
+                key = f"{event.source.casefold()}:{event.event_id.casefold()}"
+                record = session.get(EconomicCalendarRecord, key)
+                if record is None:
+                    record = EconomicCalendarRecord(event_key=key)
+                    session.add(record)
+                record.event_id = event.event_id
+                record.source = event.source
+                record.title = event.title
+                record.currency = event.currency
+                record.impact = event.impact.value
+                record.scheduled_at = event.scheduled_at
+                record.fetched_at = update.fetched_at
+
+    def calendar_events(
+        self,
+        currencies: set[str],
+        starts_at: datetime,
+        ends_at: datetime,
+    ) -> list[EconomicCalendarEvent]:
+        with self._sessions() as session:
+            records = session.scalars(
+                select(EconomicCalendarRecord)
+                .where(EconomicCalendarRecord.currency.in_(currencies))
+                .where(EconomicCalendarRecord.scheduled_at >= starts_at)
+                .where(EconomicCalendarRecord.scheduled_at <= ends_at)
+                .order_by(EconomicCalendarRecord.scheduled_at)
+                .limit(500)
+            ).all()
+        return [
+            EconomicCalendarEvent(
+                event_id=record.event_id,
+                source=record.source,
+                title=record.title,
+                currency=record.currency,
+                impact=record.impact,
+                scheduled_at=_as_utc(record.scheduled_at),
+            )
+            for record in records
         ]
 
     def list_watchlist(self) -> list[WatchlistEntry]:

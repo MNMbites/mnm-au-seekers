@@ -54,6 +54,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.mnm.auseekers.analysis.HealthFactorState
+import com.mnm.auseekers.analysis.EconomicCalendarAssessment
+import com.mnm.auseekers.analysis.EconomicCalendarRiskEvaluator
+import com.mnm.auseekers.analysis.EconomicCalendarRiskLevel
 import com.mnm.auseekers.analysis.HistoricalReplayReport
 import com.mnm.auseekers.analysis.HistoricalReplayStatus
 import com.mnm.auseekers.analysis.HistoricalSignalReplay
@@ -62,11 +65,18 @@ import com.mnm.auseekers.analysis.MarketHealthEvaluator
 import com.mnm.auseekers.analysis.MarketHealthLevel
 import com.mnm.auseekers.data.DEFAULT_SYMBOL
 import com.mnm.auseekers.data.DemoMarketDataProvider
+import com.mnm.auseekers.data.EconomicCalendarFeed
+import com.mnm.auseekers.data.EconomicCalendarPolicy
+import com.mnm.auseekers.data.EconomicCalendarPolicyStore
+import com.mnm.auseekers.data.EconomicCalendarProvider
 import com.mnm.auseekers.data.FallbackMarketDataProvider
 import com.mnm.auseekers.data.FeedState
 import com.mnm.auseekers.data.HttpMarketDataProvider
+import com.mnm.auseekers.data.HttpEconomicCalendarProvider
 import com.mnm.auseekers.data.MarketDataFeed
 import com.mnm.auseekers.data.MarketDataProvider
+import com.mnm.auseekers.data.UnavailableEconomicCalendarProvider
+import com.mnm.auseekers.data.calendarCurrenciesForSymbol
 import com.mnm.auseekers.domain.Direction
 import com.mnm.auseekers.domain.MarketAnalysis
 import com.mnm.auseekers.domain.RiskCalculator
@@ -103,8 +113,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             MnmAuSeekersTheme {
                 val provider = remember { configuredMarketDataProvider() }
+                val calendarProvider = remember { configuredEconomicCalendarProvider() }
                 MnmAuSeekersApp(
                     marketDataProvider = provider,
+                    economicCalendarProvider = calendarProvider,
                     initialFeed = initialMarketDataFeed(),
                 )
             }
@@ -116,6 +128,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun MnmAuSeekersApp(
     marketDataProvider: MarketDataProvider,
+    economicCalendarProvider: EconomicCalendarProvider,
     initialFeed: MarketDataFeed,
 ) {
     val context = LocalContext.current
@@ -131,6 +144,9 @@ private fun MnmAuSeekersApp(
         mutableStateOf(SetupNotificationScheduler.currentInterval(context))
     }
     var pendingNotificationInterval by remember { mutableStateOf<NotificationInterval?>(null) }
+    var economicCalendarPolicy by rememberSaveable {
+        mutableStateOf(EconomicCalendarPolicyStore.current(context))
+    }
     val paperRepository = remember(context) {
         AndroidPaperTradingRepository(context.applicationContext)
     }
@@ -191,6 +207,26 @@ private fun MnmAuSeekersApp(
     }
     val marketHealth = remember(feed, analysis) {
         MarketHealthEvaluator().evaluate(feed, analysis)
+    }
+    val economicCalendarFeed by produceState(
+        initialValue = EconomicCalendarFeed(
+            available = false,
+            events = emptyList(),
+            statusMessage = "Economic calendar is loading.",
+        ),
+        economicCalendarProvider,
+        selectedSymbol,
+        refreshRequest,
+    ) {
+        val now = Instant.now()
+        value = economicCalendarProvider.events(
+            currencies = calendarCurrenciesForSymbol(selectedSymbol),
+            from = now.minusSeconds(30 * 60L),
+            to = now.plusSeconds(24 * 60 * 60L),
+        )
+    }
+    val economicCalendarAssessment = remember(economicCalendarFeed) {
+        EconomicCalendarRiskEvaluator().evaluate(economicCalendarFeed)
     }
     val historicalPoints by produceState(
         initialValue = emptyList(),
@@ -284,6 +320,16 @@ private fun MnmAuSeekersApp(
             }
             item { AnalysisCard(analysis) }
             item { MarketHealthCard(marketHealth) }
+            item {
+                EconomicCalendarCard(
+                    assessment = economicCalendarAssessment,
+                    policy = economicCalendarPolicy,
+                    onPolicySelected = { policy ->
+                        EconomicCalendarPolicyStore.set(context, policy)
+                        economicCalendarPolicy = policy
+                    },
+                )
+            }
             item {
                 AnalysisJournalCard(
                     journal = journal,
@@ -390,6 +436,8 @@ private fun MnmAuSeekersApp(
                     feed = feed,
                     analysis = analysis,
                     marketHealth = marketHealth,
+                    economicCalendarAssessment = economicCalendarAssessment,
+                    economicCalendarPolicy = economicCalendarPolicy,
                     riskPlan = paperRiskPlan,
                     pointSize = pointSize.toDoubleOrNull(),
                     pointValuePerLot = pointValue.toDoubleOrNull(),
@@ -553,6 +601,55 @@ private fun AnalysisJournalCard(
             Text(
                 "Journal counts describe saved observations only; they do not measure " +
                     "profitability or predict an outcome.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun EconomicCalendarCard(
+    assessment: EconomicCalendarAssessment,
+    policy: EconomicCalendarPolicy,
+    onPolicySelected: (EconomicCalendarPolicy) -> Unit,
+) {
+    val accent = when (assessment.level) {
+        EconomicCalendarRiskLevel.CLEAR -> Color(0xFF006C4C)
+        EconomicCalendarRiskLevel.CAUTION -> Color(0xFF8A5300)
+        EconomicCalendarRiskLevel.HIGH_IMPACT -> MaterialTheme.colorScheme.error
+        EconomicCalendarRiskLevel.UNAVAILABLE -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Card(
+        colors = CardDefaults.cardColors(containerColor = accent.copy(alpha = 0.09f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("ECONOMIC CALENDAR", fontWeight = FontWeight.Black, color = accent)
+            Text(assessment.level.label, fontWeight = FontWeight.Bold)
+            Text(assessment.detail)
+            Text("High-impact behavior", style = MaterialTheme.typography.labelLarge)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(EconomicCalendarPolicy.entries, key = { it.name }) { option ->
+                    FilterChip(
+                        selected = option == policy,
+                        onClick = { onPolicySelected(option) },
+                        label = { Text(option.label) },
+                    )
+                }
+            }
+            Text(
+                when (policy) {
+                    EconomicCalendarPolicy.WARN_ONLY -> {
+                        "Warnings reduce confidence context but do not block a new paper setup."
+                    }
+                    EconomicCalendarPolicy.BLOCK_HIGH_IMPACT -> {
+                        "New paper setups and background setup alerts are suppressed within " +
+                            "30 minutes of a high-impact event."
+                    }
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -987,6 +1084,8 @@ private fun PaperTradingCard(
     feed: MarketDataFeed,
     analysis: MarketAnalysis,
     marketHealth: MarketHealthAssessment,
+    economicCalendarAssessment: EconomicCalendarAssessment,
+    economicCalendarPolicy: EconomicCalendarPolicy,
     riskPlan: RiskPlan,
     pointSize: Double?,
     pointValuePerLot: Double?,
@@ -1005,6 +1104,9 @@ private fun PaperTradingCard(
         feed.state != FeedState.LIVE -> "Live data is required to open a paper position."
         marketHealth.level != MarketHealthLevel.READY -> {
             "Market health must be Ready before opening a paper position."
+        }
+        economicCalendarAssessment.suppresses(economicCalendarPolicy) -> {
+            "High-impact calendar risk is inside the 30-minute block window."
         }
         analysis.direction == Direction.WAIT -> "A Buy or Sell analysis direction is required."
         !riskPlan.allowed || riskPlan.suggestedLot == null -> riskPlan.reason
@@ -1264,6 +1366,15 @@ private fun configuredMarketDataProvider(): MarketDataProvider {
     }.getOrElse {
         DemoMarketDataProvider("Invalid live-service configuration; using bundled demo data.")
     }
+}
+
+private fun configuredEconomicCalendarProvider(): EconomicCalendarProvider {
+    val baseUrl = BuildConfig.MARKET_DATA_BASE_URL.trim()
+    if (baseUrl.isBlank()) return UnavailableEconomicCalendarProvider()
+    return runCatching { HttpEconomicCalendarProvider(baseUrl) }
+        .getOrElse {
+            UnavailableEconomicCalendarProvider("Invalid calendar-service configuration.")
+        }
 }
 
 private fun initialMarketDataFeed(): MarketDataFeed = if (

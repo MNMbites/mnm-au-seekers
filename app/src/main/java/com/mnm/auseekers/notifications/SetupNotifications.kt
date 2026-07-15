@@ -21,8 +21,11 @@ import com.mnm.auseekers.MainActivity
 import com.mnm.auseekers.R
 import com.mnm.auseekers.analysis.MarketHealthEvaluator
 import com.mnm.auseekers.analysis.MarketHealthLevel
+import com.mnm.auseekers.analysis.EconomicCalendarAssessment
+import com.mnm.auseekers.analysis.EconomicCalendarRiskLevel
 import com.mnm.auseekers.data.FeedState
 import com.mnm.auseekers.data.MarketDataFeed
+import com.mnm.auseekers.data.EconomicCalendarPolicy
 import com.mnm.auseekers.domain.Direction
 import com.mnm.auseekers.domain.SetupStage
 import com.mnm.auseekers.domain.SignalEngine
@@ -50,8 +53,13 @@ class SetupNotificationEvaluator(
     private val signalEngine: SignalEngine = SignalEngine(),
     private val marketHealthEvaluator: MarketHealthEvaluator = MarketHealthEvaluator(),
 ) {
-    fun evaluate(feed: MarketDataFeed): SetupNotification? {
+    fun evaluate(
+        feed: MarketDataFeed,
+        calendarAssessment: EconomicCalendarAssessment? = null,
+        calendarPolicy: EconomicCalendarPolicy = EconomicCalendarPolicy.WARN_ONLY,
+    ): SetupNotification? {
         if (feed.state != FeedState.LIVE) return null
+        if (calendarAssessment?.suppresses(calendarPolicy) == true) return null
 
         val analysis = signalEngine.analyse(feed.snapshots, TradingMode.PRIMARY)
         if (analysis.direction == Direction.WAIT || analysis.stage == SetupStage.WATCH) {
@@ -60,13 +68,28 @@ class SetupNotificationEvaluator(
         val marketHealth = marketHealthEvaluator.evaluate(feed, analysis)
         if (marketHealth.level == MarketHealthLevel.NOT_READY) return null
 
+        val calendarWarning = if (
+            calendarAssessment?.level == EconomicCalendarRiskLevel.HIGH_IMPACT
+        ) {
+            " Calendar warning: ${calendarAssessment.detail}"
+        } else {
+            ""
+        }
+        val calendarFingerprint = if (
+            calendarAssessment?.level == EconomicCalendarRiskLevel.HIGH_IMPACT
+        ) {
+            calendarAssessment.nearestEvent?.eventId ?: "high-impact"
+        } else {
+            "no-event"
+        }
         return SetupNotification(
             symbol = feed.symbol,
             title = "${feed.symbol} ${analysis.direction.label} setup",
             body = "${analysis.stage.label} • ${analysis.strength}% alignment • " +
                 "${marketHealth.level.label}. ${marketHealth.confidenceExplanation} " +
-                "Analysis only.",
-            fingerprint = "${analysis.direction.name}:${analysis.stage.name}",
+                "Analysis only.$calendarWarning",
+            fingerprint = "${analysis.direction.name}:${analysis.stage.name}:" +
+                calendarFingerprint,
         )
     }
 }

@@ -1,5 +1,10 @@
 package com.mnm.auseekers.notifications
 
+import com.mnm.auseekers.analysis.EconomicCalendarAssessment
+import com.mnm.auseekers.analysis.EconomicCalendarRiskLevel
+import com.mnm.auseekers.data.EconomicCalendarEvent
+import com.mnm.auseekers.data.EconomicCalendarPolicy
+import com.mnm.auseekers.data.EconomicImpact
 import com.mnm.auseekers.data.FeedState
 import com.mnm.auseekers.data.MarketDataFeed
 import com.mnm.auseekers.domain.Direction
@@ -9,6 +14,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
 
 class SetupNotificationEvaluatorTest {
     private val evaluator = SetupNotificationEvaluator()
@@ -47,6 +53,38 @@ class SetupNotificationEvaluatorTest {
         }
 
         assertNull(evaluator.evaluate(feed))
+    }
+
+    @Test
+    fun highImpactPolicyCanWarnOrSuppressAlert() {
+        val event = EconomicCalendarEvent(
+            eventId = "us-cpi",
+            source = "test",
+            title = "US CPI",
+            currency = "USD",
+            impact = EconomicImpact.HIGH,
+            scheduledAt = Instant.parse("2026-07-14T12:20:00Z"),
+        )
+        val assessment = EconomicCalendarAssessment(
+            EconomicCalendarRiskLevel.HIGH_IMPACT,
+            "US CPI in 20 min",
+            event,
+        )
+
+        val warned = evaluator.evaluate(
+            feed(FeedState.LIVE, ::bullish),
+            assessment,
+            EconomicCalendarPolicy.WARN_ONLY,
+        )
+        val blocked = evaluator.evaluate(
+            feed(FeedState.LIVE, ::bullish),
+            assessment,
+            EconomicCalendarPolicy.BLOCK_HIGH_IMPACT,
+        )
+
+        requireNotNull(warned)
+        assertTrue(warned.body.contains("Calendar warning"))
+        assertNull(blocked)
     }
 
     private fun feed(
