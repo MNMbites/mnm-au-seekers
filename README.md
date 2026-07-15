@@ -30,6 +30,8 @@ backends.
   snapshot statistics
 - Bounded historical snapshot retrieval and deterministic next-snapshot signal
   replay without synthetic fills or P&L claims
+- Provider-neutral economic-calendar risk warnings with optional high-impact
+  suppression for paper setups and background alerts
 - A read-only MT5 EA that publishes quotes and indicator snapshots
 - A FastAPI ingestion service with token authentication and stale-data status
 - Durable snapshot history and case-insensitive watchlists with Alembic
@@ -79,12 +81,14 @@ Manual analysis-journal behavior and privacy boundaries are documented in
 [docs/analysis-journal.md](docs/analysis-journal.md).
 Historical replay semantics and limitations are specified in
 [docs/historical-replay.md](docs/historical-replay.md).
+Economic-calendar ingestion, risk windows, and suppression behavior are
+documented in [docs/economic-calendar.md](docs/economic-calendar.md).
 
 ## Roadmap
 
 1. Review and merge the stacked milestones in dependency order.
 2. Validate paper behavior on physical devices and MT5 demo feeds.
-3. Add economic-calendar risk context before broader v2 features.
+3. Add configurable London/New York pre-market briefing windows.
 4. Keep broker execution out of scope until paper behavior is validated and a
    separate security design is reviewed.
 

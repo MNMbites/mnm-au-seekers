@@ -20,12 +20,13 @@ create production tables automatically.
 ```bash
 export MT5_BRIDGE_TOKEN='replace-with-a-long-random-value'
 export WATCHLIST_ADMIN_TOKEN='replace-with-a-different-random-value'
+export ECONOMIC_CALENDAR_TOKEN='replace-with-a-third-random-value'
 uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Keep both tokens and the database URL in the deployment secret manager. Do not
-reuse the bridge token for watchlist administration or expose either token to
-the Android app.
+Keep all tokens and the database URL in the deployment secret manager. Do not
+reuse the bridge token for watchlist or calendar ingestion, and do not expose
+any ingestion token to the Android app.
 
 ## Snapshot history API
 

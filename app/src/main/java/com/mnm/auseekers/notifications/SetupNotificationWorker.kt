@@ -7,6 +7,11 @@ import com.mnm.auseekers.BuildConfig
 import com.mnm.auseekers.data.DEFAULT_SYMBOL
 import com.mnm.auseekers.data.FeedState
 import com.mnm.auseekers.data.HttpMarketDataProvider
+import com.mnm.auseekers.data.HttpEconomicCalendarProvider
+import com.mnm.auseekers.data.EconomicCalendarPolicyStore
+import com.mnm.auseekers.data.calendarCurrenciesForSymbol
+import com.mnm.auseekers.analysis.EconomicCalendarRiskEvaluator
+import java.time.Instant
 
 class SetupNotificationWorker(
     appContext: Context,
@@ -22,6 +27,9 @@ class SetupNotificationWorker(
 
         val provider = runCatching { HttpMarketDataProvider(baseUrl) }
             .getOrElse { return Result.failure() }
+        val calendarProvider = runCatching { HttpEconomicCalendarProvider(baseUrl) }
+            .getOrElse { return Result.failure() }
+        val calendarPolicy = EconomicCalendarPolicyStore.current(applicationContext)
         val symbols = runCatching { provider.watchlist() }
             .getOrElse { return Result.retry() }
             .ifEmpty { listOf(DEFAULT_SYMBOL) }
@@ -33,7 +41,21 @@ class SetupNotificationWorker(
             runCatching { provider.latest(symbol) }.onSuccess { feed ->
                 successfulFetches += 1
                 if (feed.state != FeedState.LIVE) return@onSuccess
-                val notification = evaluator.evaluate(feed)
+                val now = Instant.now()
+                val calendarFeed = calendarProvider.events(
+                    currencies = calendarCurrenciesForSymbol(symbol),
+                    from = now.minusSeconds(30 * 60L),
+                    to = now.plusSeconds(60 * 60L),
+                )
+                val calendarAssessment = EconomicCalendarRiskEvaluator().evaluate(
+                    calendarFeed,
+                    now,
+                )
+                val notification = evaluator.evaluate(
+                    feed,
+                    calendarAssessment,
+                    calendarPolicy,
+                )
                 if (notification == null) {
                     deduplicator.clear(symbol)
                 } else if (deduplicator.shouldNotify(notification)) {

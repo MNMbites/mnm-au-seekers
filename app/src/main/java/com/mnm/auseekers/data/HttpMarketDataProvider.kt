@@ -7,6 +7,7 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.time.Instant
 
 class HttpMarketDataProvider(
     baseUrl: String,
@@ -52,6 +53,21 @@ internal class HttpMarketDataTransport(baseUrl: String) {
         val encodedSymbol = URLEncoder.encode(symbol, StandardCharsets.UTF_8.toString())
         return get("/api/v1/market-data/$encodedSymbol/history?limit=$limit")
     }
+
+    fun economicCalendar(
+        currencies: Set<String>,
+        from: Instant,
+        to: Instant,
+    ): String {
+        val encodedCurrencies = encode(currencies.sorted().joinToString(","))
+        return get(
+            "/api/v1/economic-calendar/events?currencies=$encodedCurrencies" +
+                "&from=${encode(from.toString())}&to=${encode(to.toString())}",
+        )
+    }
+
+    private fun encode(value: String): String =
+        URLEncoder.encode(value, StandardCharsets.UTF_8.toString())
 
     private fun get(path: String): String {
         val connection = URI("$normalizedBaseUrl$path")

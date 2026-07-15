@@ -7,9 +7,9 @@ from uuid import uuid4
 import pytest
 
 from backend.app.database import SqlAlchemyMarketDataRepository
-from backend.app.models import MarketSnapshot
+from backend.app.models import EconomicCalendarUpdate, MarketSnapshot
 from backend.app.repository import OutOfOrderSnapshotError
-from backend.tests.test_api import NOW, snapshot_payload
+from backend.tests.test_api import NOW, calendar_update, snapshot_payload
 
 
 def repository(database_url: str) -> SqlAlchemyMarketDataRepository:
@@ -81,6 +81,23 @@ def test_watchlist_persists_across_repository_instances(tmp_path) -> None:
     assert restored.list_watchlist() == [created]
     assert restored.remove_watchlist_symbol("xauusd") is True
     assert restored.list_watchlist() == []
+
+
+def test_economic_calendar_upserts_and_filters_durably(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'market-data.db'}"
+    first = repository(database_url)
+    update = EconomicCalendarUpdate.model_validate(calendar_update())
+
+    first.upsert_calendar(update)
+    restored = repository(database_url)
+    events = restored.calendar_events(
+        {"USD"},
+        datetime(2026, 7, 14, 12, 0, tzinfo=UTC),
+        datetime(2026, 7, 14, 13, 0, tzinfo=UTC),
+    )
+
+    assert [event.event_id for event in events] == ["us-cpi"]
+    assert events[0].title == "US CPI"
 
 
 @pytest.mark.skipif(
