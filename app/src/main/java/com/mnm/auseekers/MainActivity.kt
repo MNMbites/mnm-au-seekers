@@ -54,6 +54,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.mnm.auseekers.analysis.HealthFactorState
+import com.mnm.auseekers.analysis.HistoricalReplayReport
+import com.mnm.auseekers.analysis.HistoricalReplayStatus
+import com.mnm.auseekers.analysis.HistoricalSignalReplay
 import com.mnm.auseekers.analysis.MarketHealthAssessment
 import com.mnm.auseekers.analysis.MarketHealthEvaluator
 import com.mnm.auseekers.analysis.MarketHealthLevel
@@ -189,6 +192,17 @@ private fun MnmAuSeekersApp(
     val marketHealth = remember(feed, analysis) {
         MarketHealthEvaluator().evaluate(feed, analysis)
     }
+    val historicalPoints by produceState(
+        initialValue = emptyList(),
+        marketDataProvider,
+        selectedSymbol,
+        refreshRequest,
+    ) {
+        value = marketDataProvider.history(selectedSymbol, limit = 100)
+    }
+    val historicalReplay = remember(historicalPoints, mode) {
+        HistoricalSignalReplay().replay(historicalPoints, mode)
+    }
     val riskPlan = remember(mode, profile, balance, stopPoints, pointValue) {
         RiskCalculator().calculate(
             RiskRequest(
@@ -307,6 +321,7 @@ private fun MnmAuSeekersApp(
                     },
                 )
             }
+            item { HistoricalReplayCard(historicalReplay, mode) }
             item {
                 NotificationSettings(
                     selected = notificationInterval,
@@ -559,6 +574,76 @@ private fun JournalMetric(
 
 private fun formatJournalTime(epochMillis: Long): String =
     JOURNAL_TIME_FORMATTER.format(Instant.ofEpochMilli(epochMillis))
+
+@Composable
+private fun HistoricalReplayCard(
+    report: HistoricalReplayReport,
+    mode: TradingMode,
+) {
+    val accent = when (report.status) {
+        HistoricalReplayStatus.VERIFIED -> Color(0xFF345995)
+        HistoricalReplayStatus.NEEDS_REVIEW -> MaterialTheme.colorScheme.error
+        HistoricalReplayStatus.EMPTY,
+        HistoricalReplayStatus.INSUFFICIENT -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Card(
+        colors = CardDefaults.cardColors(containerColor = accent.copy(alpha = 0.08f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("HISTORICAL SIGNAL REPLAY", fontWeight = FontWeight.Black, color = accent)
+            Text("${mode.label} • ${report.status.label}", fontWeight = FontWeight.Bold)
+            when (report.status) {
+                HistoricalReplayStatus.EMPTY -> Text(
+                    "No stored live snapshots are available from the configured backend.",
+                )
+                HistoricalReplayStatus.INSUFFICIENT -> Text(
+                    "At least two chronological snapshots are required for a forward comparison.",
+                )
+                HistoricalReplayStatus.NEEDS_REVIEW -> Text(
+                    report.issue ?: "Stored history could not be replayed safely.",
+                    color = MaterialTheme.colorScheme.error,
+                )
+                HistoricalReplayStatus.VERIFIED -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        JournalMetric("Snapshots", report.observationCount.toString())
+                        JournalMetric("Signals", report.actionableSignalCount.toString())
+                        JournalMetric(
+                            "Confirmed",
+                            report.confirmedSignalCount.toString(),
+                            Alignment.End,
+                        )
+                    }
+                    Text(
+                        "Direction: ${report.buySignalCount} Buy • " +
+                            "${report.sellSignalCount} Sell",
+                    )
+                    Text(
+                        "Next midpoint: ${report.favorableMoveCount} favorable • " +
+                            "${report.adverseMoveCount} adverse • ${report.flatMoveCount} flat",
+                    )
+                    Text(
+                        "Average signed move: " +
+                            (report.averageSignedMoveBps?.let { "${it.format(2)} bps" } ?: "—") +
+                            " • maximum one-step adverse move: " +
+                            "${report.maximumAdverseMoveBps.format(2)} bps",
+                    )
+                }
+            }
+            Text(
+                "Replay compares each signal with the next stored midpoint. It does not model " +
+                    "fills, costs, stops, holding time, P&L, or future performance.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
 
 @Composable
 private fun ConnectionBanner(

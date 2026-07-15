@@ -19,6 +19,8 @@ class MarketDataRepository(Protocol):
 
     def latest(self, symbol: str) -> MarketDataEnvelope | None: ...
 
+    def history(self, symbol: str, limit: int) -> list[MarketSnapshot]: ...
+
     def list_watchlist(self) -> list[WatchlistEntry]: ...
 
     def add_watchlist_symbol(self, symbol: str) -> WatchlistEntry: ...
@@ -43,7 +45,7 @@ class SnapshotStore:
     ) -> None:
         self._max_snapshot_age_seconds = max_snapshot_age_seconds
         self._clock = clock or (lambda: datetime.now(UTC))
-        self._snapshots: dict[str, tuple[MarketSnapshot, datetime]] = {}
+        self._snapshots: dict[str, list[tuple[MarketSnapshot, datetime]]] = {}
         self._watchlist: dict[str, WatchlistEntry] = {}
         self._lock = RLock()
 
@@ -51,16 +53,18 @@ class SnapshotStore:
         key = snapshot.symbol.casefold()
         received_at = self._utc_now()
         with self._lock:
-            current = self._snapshots.get(key)
-            if current and snapshot.captured_at <= current[0].captured_at:
+            history = self._snapshots.setdefault(key, [])
+            if history and snapshot.captured_at <= history[-1][0].captured_at:
                 raise OutOfOrderSnapshotError(
                     "captured_at must be newer than the stored snapshot"
                 )
-            self._snapshots[key] = (snapshot, received_at)
+            history.append((snapshot, received_at))
+            del history[:-MEMORY_HISTORY_LIMIT]
 
     def latest(self, symbol: str) -> MarketDataEnvelope | None:
         with self._lock:
-            stored = self._snapshots.get(symbol.casefold())
+            history = self._snapshots.get(symbol.casefold())
+            stored = history[-1] if history else None
         if stored is None:
             return None
 
@@ -73,6 +77,11 @@ class SnapshotStore:
             received_at=received_at,
             snapshot=snapshot,
         )
+
+    def history(self, symbol: str, limit: int) -> list[MarketSnapshot]:
+        with self._lock:
+            history = self._snapshots.get(symbol.casefold(), [])
+            return [snapshot for snapshot, _ in history[-limit:]]
 
     def list_watchlist(self) -> list[WatchlistEntry]:
         with self._lock:
@@ -100,3 +109,6 @@ class SnapshotStore:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("SnapshotStore clock must return a timezone-aware datetime")
         return value.astimezone(UTC)
+
+
+MEMORY_HISTORY_LIMIT = 500

@@ -16,23 +16,15 @@ class MarketDataJsonParser {
         val state = root.requiredString("state").uppercase(Locale.US).toFeedState()
         val ageSeconds = root.requiredInt("age_seconds")
         val snapshot = root.requiredObject("snapshot")
-        val symbol = snapshot.requiredString("symbol")
-        val capturedAt = Instant.parse(snapshot.requiredString("captured_at"))
-        val timeframes = snapshot.requiredArray("timeframes").map { element ->
-            element.requiredObject("timeframe").toMarketSnapshot()
-        }
-
-        require(timeframes.map { it.timeframe }.toSet() == Timeframe.entries.toSet()) {
-            "Market data must include M15, H1, and H4 exactly once"
-        }
+        val point = snapshot.toHistoricalPoint()
 
         MarketDataFeed(
-            symbol = symbol,
-            capturedAt = capturedAt,
+            symbol = point.symbol,
+            capturedAt = point.capturedAt,
             state = state,
-            snapshots = timeframes,
-            bid = snapshot.requiredDouble("bid"),
-            ask = snapshot.requiredDouble("ask"),
+            snapshots = point.snapshots,
+            bid = point.bid,
+            ask = point.ask,
             ageSeconds = ageSeconds,
             statusMessage = when (state) {
                 FeedState.LIVE -> "Live MT5 snapshot received from the authorised bridge."
@@ -69,6 +61,43 @@ class MarketDataJsonParser {
         throw IOException("Live service returned an invalid watchlist payload.", error)
     } catch (error: IllegalStateException) {
         throw IOException("Live service returned an invalid watchlist payload.", error)
+    }
+
+    fun parseHistory(json: String): List<HistoricalMarketDataPoint> = try {
+        val root = JsonParser.parseString(json).requiredObject("response")
+        root.requiredArray("items").map { element ->
+            element.requiredObject("history item").toHistoricalPoint()
+        }
+    } catch (error: JsonParseException) {
+        throw IOException("Live service returned malformed history JSON.", error)
+    } catch (error: DateTimeParseException) {
+        throw IOException("Live service returned an invalid history timestamp.", error)
+    } catch (error: IllegalArgumentException) {
+        throw IOException("Live service returned an invalid history payload.", error)
+    } catch (error: IllegalStateException) {
+        throw IOException("Live service returned an invalid history payload.", error)
+    }
+
+    private fun JsonObject.toHistoricalPoint(): HistoricalMarketDataPoint {
+        val timeframes = requiredArray("timeframes").map { element ->
+            element.requiredObject("timeframe").toMarketSnapshot()
+        }
+        require(
+            timeframes.size == Timeframe.entries.size &&
+                timeframes.map { it.timeframe }.toSet() == Timeframe.entries.toSet(),
+        ) {
+            "Market data must include M15, H1, and H4 exactly once"
+        }
+        val bid = requiredDouble("bid")
+        val ask = requiredDouble("ask")
+        require(bid > 0 && ask >= bid) { "Market data quote is invalid" }
+        return HistoricalMarketDataPoint(
+            symbol = requiredString("symbol").validatedSymbol(),
+            capturedAt = Instant.parse(requiredString("captured_at")),
+            bid = bid,
+            ask = ask,
+            snapshots = timeframes,
+        )
     }
 
     private fun JsonObject.toMarketSnapshot(): MarketSnapshot = MarketSnapshot(
