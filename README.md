@@ -32,6 +32,8 @@ backends.
   replay without synthetic fills or P&L claims
 - Provider-neutral economic-calendar risk warnings with optional high-impact
   suppression for paper setups and background alerts
+- DST-aware London/New York pre-market plans with Off/30/60-minute,
+  once-per-session XAU/USD alerts
 - A read-only MT5 EA that publishes quotes and indicator snapshots
 - A FastAPI ingestion service with token authentication and stale-data status
 - Durable snapshot history and case-insensitive watchlists with Alembic
@@ -83,12 +85,14 @@ Historical replay semantics and limitations are specified in
 [docs/historical-replay.md](docs/historical-replay.md).
 Economic-calendar ingestion, risk windows, and suppression behavior are
 documented in [docs/economic-calendar.md](docs/economic-calendar.md).
+Session timing, preparation fields, and alert limitations are documented in
+[docs/pre-market-briefings.md](docs/pre-market-briefings.md).
 
 ## Roadmap
 
 1. Review and merge the stacked milestones in dependency order.
 2. Validate paper behavior on physical devices and MT5 demo feeds.
-3. Add configurable London/New York pre-market briefing windows.
+3. Complete physical-device, MT5 demo-feed, and notification timing validation.
 4. Keep broker execution out of scope until paper behavior is validated and a
    separate security design is reviewed.
 
