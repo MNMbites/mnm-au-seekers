@@ -127,8 +127,11 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+    private var notificationAuditRevision by mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        captureNotificationOpen(intent)
         setContent {
             MnmAuSeekersTheme {
                 val provider = remember { configuredMarketDataProvider() }
@@ -137,9 +140,30 @@ class MainActivity : ComponentActivity() {
                     marketDataProvider = provider,
                     economicCalendarProvider = calendarProvider,
                     initialFeed = initialMarketDataFeed(),
+                    notificationAuditRevision = notificationAuditRevision,
                 )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureNotificationOpen(intent)
+    }
+
+    private fun captureNotificationOpen(intent: Intent?) {
+        val auditId = intent?.getStringExtra(NOTIFICATION_AUDIT_ID_EXTRA) ?: return
+        intent.removeExtra(NOTIFICATION_AUDIT_ID_EXTRA)
+        val recorded = runCatching {
+            NotificationAuditRecorder(applicationContext).markOpened(auditId)
+        }.getOrDefault(false)
+        if (recorded) notificationAuditRevision += 1
+    }
+
+    companion object {
+        const val NOTIFICATION_AUDIT_ID_EXTRA =
+            "com.mnm.auseekers.extra.NOTIFICATION_AUDIT_ID"
     }
 }
 
@@ -149,6 +173,7 @@ private fun MnmAuSeekersApp(
     marketDataProvider: MarketDataProvider,
     economicCalendarProvider: EconomicCalendarProvider,
     initialFeed: MarketDataFeed,
+    notificationAuditRevision: Int,
 ) {
     val context = LocalContext.current
     var mode by rememberSaveable { mutableStateOf(TradingMode.PRIMARY) }
@@ -198,7 +223,7 @@ private fun MnmAuSeekersApp(
             value = Instant.now()
         }
     }
-    val notificationAudit = remember(validationRefreshRequest) {
+    val notificationAudit = remember(validationRefreshRequest, notificationAuditRevision) {
         NotificationAuditRecorder(context).load()
     }
 

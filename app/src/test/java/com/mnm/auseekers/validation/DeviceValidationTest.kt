@@ -22,7 +22,7 @@ class DeviceValidationTest {
     fun liveConfiguredInstallationPassesCoreDeviceChecks() {
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.12.0",
+            appVersion = "0.13.0",
             liveServiceConfigured = true,
             feed = liveFeed(),
             marketHealth = health(MarketHealthLevel.READY),
@@ -35,7 +35,7 @@ class DeviceValidationTest {
         )
 
         assertEquals(BUILD_COMMIT, report.buildCommit)
-        assertEquals(10, report.passCount)
+        assertEquals(11, report.passCount)
         assertEquals(0, report.checkCount)
         assertEquals(0, report.blockedCount)
     }
@@ -44,7 +44,7 @@ class DeviceValidationTest {
     fun demoInstallationIsExplicitlyBlockedAndSchedulesRemainOptional() {
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.12.0",
+            appVersion = "0.13.0",
             liveServiceConfigured = false,
             feed = MarketDataFeed(
                 symbol = "XAUUSD",
@@ -62,7 +62,7 @@ class DeviceValidationTest {
         )
 
         assertEquals(4, report.blockedCount)
-        assertEquals(4, report.checkCount)
+        assertEquals(5, report.checkCount)
         assertEquals(2, report.passCount)
         assertTrue(report.items.any {
             it.label == "MT5 feed state" && it.status == ValidationStatus.BLOCKED
@@ -76,7 +76,7 @@ class DeviceValidationTest {
         }
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.12.0",
+            appVersion = "0.13.0",
             liveServiceConfigured = true,
             feed = liveFeed(),
             marketHealth = health(MarketHealthLevel.READY),
@@ -96,7 +96,7 @@ class DeviceValidationTest {
     fun exportIsRedactedAndExplainsPublicationEvidence() {
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.12.0",
+            appVersion = "0.13.0",
             liveServiceConfigured = true,
             feed = liveFeed().copy(statusMessage = "https://secret.example token=do-not-export"),
             marketHealth = health(MarketHealthLevel.READY),
@@ -114,8 +114,32 @@ class DeviceValidationTest {
         assertTrue(exported.contains("Android accepted the notification request"))
         assertTrue(exported.contains("no service endpoint, token, device identifier"))
         assertTrue(exported.contains("Build commit: local"))
+        assertTrue(exported.contains("open offset 30s"))
+        assertTrue(exported.contains("includes both operating-system delivery and user response"))
         assertFalse(exported.contains("secret.example"))
         assertFalse(exported.contains("do-not-export"))
+        assertFalse(exported.contains("audit-$NOW"))
+    }
+
+    @Test
+    fun publicationWithoutAlertOpenRemainsCheckEvidence() {
+        val report = evaluator.evaluate(
+            generatedAtEpochMillis = NOW,
+            appVersion = "0.13.0",
+            liveServiceConfigured = true,
+            feed = liveFeed(),
+            marketHealth = health(MarketHealthLevel.READY),
+            calendar = calendar(EconomicCalendarRiskLevel.CLEAR),
+            notificationsEnabled = true,
+            setupInterval = NotificationInterval.THIRTY_MINUTES,
+            preMarketLeadTime = PreMarketLeadTime.SIXTY_MINUTES,
+            notificationAudit = listOf(audit(openedAt = null)),
+        )
+
+        assertTrue(report.items.any {
+            it.label == "Notification open evidence" &&
+                it.status == ValidationStatus.CHECK
+        })
     }
 
     private fun liveFeed() = MarketDataFeed(
@@ -143,11 +167,16 @@ class DeviceValidationTest {
         nearestEvent = null,
     )
 
-    private fun audit(publishedAt: Long = NOW) = NotificationAuditRecord(
+    private fun audit(
+        publishedAt: Long = NOW,
+        openedAt: Long? = publishedAt + 30_000,
+    ) = NotificationAuditRecord(
         kind = NotificationAuditKind.PRE_MARKET,
+        recordId = "audit-$publishedAt",
         symbol = "XAUUSD",
         publishedAtEpochMillis = publishedAt,
         expectedAtEpochMillis = NOW - 60_000,
+        openedAtEpochMillis = openedAt,
         context = "London",
     )
 

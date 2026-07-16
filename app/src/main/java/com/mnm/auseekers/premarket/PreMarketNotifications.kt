@@ -155,12 +155,24 @@ object PreMarketBriefingPublisher {
     fun publish(context: Context, symbol: String, briefing: PreMarketBriefing) {
         if (!SetupNotificationPublisher.notificationsEnabled(context)) return
         createChannel(context)
+        val auditRecorder = NotificationAuditRecorder(context)
+        val auditId = NotificationAuditRecorder.newRecordId()
+        val auditRecorded = runCatching {
+            auditRecorder.record(
+                recordId = auditId,
+                kind = NotificationAuditKind.PRE_MARKET,
+                symbol = symbol,
+                expectedAtEpochMillis = briefing.window.briefingStartsAt.toEpochMilli(),
+                context = briefing.window.session.label,
+            )
+        }.getOrDefault(false)
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(MainActivity.NOTIFICATION_AUDIT_ID_EXTRA, auditId)
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
-            briefing.window.fingerprint.hashCode(),
+            auditId.hashCode(),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -175,17 +187,14 @@ object PreMarketBriefingPublisher {
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
             .build()
-        NotificationManagerCompat.from(context).notify(
-            briefing.window.fingerprint.hashCode() and Int.MAX_VALUE,
-            notification,
-        )
-        runCatching {
-            NotificationAuditRecorder(context).record(
-                kind = NotificationAuditKind.PRE_MARKET,
-                symbol = symbol,
-                expectedAtEpochMillis = briefing.window.briefingStartsAt.toEpochMilli(),
-                context = briefing.window.session.label,
+        try {
+            NotificationManagerCompat.from(context).notify(
+                briefing.window.fingerprint.hashCode() and Int.MAX_VALUE,
+                notification,
             )
+        } catch (error: RuntimeException) {
+            if (auditRecorded) runCatching { auditRecorder.remove(auditId) }
+            throw error
         }
     }
 

@@ -70,5 +70,10 @@ are recorded locally in a bounded, redacted audit described in
 [device-validation.md](device-validation.md). This evidence does not prove that
 Android displayed the notification or that the user saw it.
 
+Each posted alert carries a private random audit identifier in its content
+intent. Opening the alert records the first tap time and refreshes the validation
+report. The identifier is not exported, and the app does not request Android
+notification-listener access.
+
 See [market-health.md](market-health.md) for the readiness factors and confidence
 language included in each alert.

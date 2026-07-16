@@ -180,12 +180,23 @@ object SetupNotificationPublisher {
         if (!notificationsEnabled(context)) return
         createChannel(context)
 
+        val auditRecorder = NotificationAuditRecorder(context)
+        val auditId = NotificationAuditRecorder.newRecordId()
+        val auditRecorded = runCatching {
+            auditRecorder.record(
+                recordId = auditId,
+                kind = NotificationAuditKind.SETUP,
+                symbol = notification.symbol,
+                context = "${notification.fingerprint.substringBeforeLast(':')} setup",
+            )
+        }.getOrDefault(false)
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(MainActivity.NOTIFICATION_AUDIT_ID_EXTRA, auditId)
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
-            notification.symbol.hashCode(),
+            auditId.hashCode(),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -199,16 +210,14 @@ object SetupNotificationPublisher {
             .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
             .build()
 
-        NotificationManagerCompat.from(context).notify(
-            notification.symbol.hashCode() and Int.MAX_VALUE,
-            rendered,
-        )
-        runCatching {
-            NotificationAuditRecorder(context).record(
-                kind = NotificationAuditKind.SETUP,
-                symbol = notification.symbol,
-                context = "${notification.fingerprint.substringBeforeLast(':')} setup",
+        try {
+            NotificationManagerCompat.from(context).notify(
+                notification.symbol.hashCode() and Int.MAX_VALUE,
+                rendered,
             )
+        } catch (error: RuntimeException) {
+            if (auditRecorded) runCatching { auditRecorder.remove(auditId) }
+            throw error
         }
     }
 

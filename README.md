@@ -40,6 +40,8 @@ backends.
   stage, London/New York sessions, and device-local quiet hours
 - Traceable CI debug APK artifacts with an embedded build commit and SHA-256
   checksum for physical-device validation
+- Notification tap-through evidence with publication-to-open offsets, recorded
+  without notification-listener access or test alerts
 - A read-only MT5 EA that publishes quotes and indicator snapshots
 - A FastAPI ingestion service with token authentication and stale-data status
 - Durable snapshot history and case-insensitive watchlists with Alembic

@@ -34,11 +34,56 @@ enum class NotificationAuditKind(val label: String) {
 
 data class NotificationAuditRecord(
     val kind: NotificationAuditKind,
+    val recordId: String? = null,
     val symbol: String,
     val publishedAtEpochMillis: Long,
     val expectedAtEpochMillis: Long? = null,
+    val openedAtEpochMillis: Long? = null,
     val context: String,
 )
+
+data class NotificationAuditUpdate(
+    val records: List<NotificationAuditRecord>,
+    val changed: Boolean,
+)
+
+class NotificationAuditLedger(
+    private val maximumRecords: Int = 20,
+) {
+    init {
+        require(maximumRecords > 0) { "Audit retention must be positive." }
+    }
+
+    fun add(
+        records: List<NotificationAuditRecord>,
+        record: NotificationAuditRecord,
+    ): List<NotificationAuditRecord> = (listOf(record) + records).take(maximumRecords)
+
+    fun markOpened(
+        records: List<NotificationAuditRecord>,
+        recordId: String,
+        openedAtEpochMillis: Long,
+    ): NotificationAuditUpdate {
+        if (recordId.isBlank()) return NotificationAuditUpdate(records, false)
+        val index = records.indexOfFirst { it.recordId == recordId }
+        if (index < 0 || records[index].openedAtEpochMillis != null) {
+            return NotificationAuditUpdate(records, false)
+        }
+        val updated = records.toMutableList()
+        val matched = records[index]
+        updated[index] = matched.copy(
+            openedAtEpochMillis = openedAtEpochMillis.coerceAtLeast(
+                matched.publishedAtEpochMillis,
+            ),
+        )
+        return NotificationAuditUpdate(updated, true)
+    }
+
+    fun remove(
+        records: List<NotificationAuditRecord>,
+        recordId: String,
+    ): List<NotificationAuditRecord> = records.filterNot { it.recordId == recordId }
+}
 
 data class DeviceValidationReport(
     val generatedAtEpochMillis: Long,
@@ -151,6 +196,21 @@ class DeviceValidationEvaluator {
                         "${boundedAudit.size} recent publication record(s) are available."
                     },
                 ),
+                ValidationItem(
+                    "Notification open evidence",
+                    if (boundedAudit.any { it.openedAtEpochMillis != null }) {
+                        ValidationStatus.PASS
+                    } else {
+                        ValidationStatus.CHECK
+                    },
+                    boundedAudit.count { it.openedAtEpochMillis != null }.let { opened ->
+                        if (opened == 0) {
+                            "No posted notification has been opened from its alert yet."
+                        } else {
+                            "$opened recent notification(s) were opened from their alert."
+                        }
+                    },
+                ),
             ),
             notificationAudit = boundedAudit,
         )
@@ -226,6 +286,10 @@ class DeviceValidationReportExporter {
                     val delaySeconds = (record.publishedAtEpochMillis - expected) / 1_000
                     append(" | expected ${expected.utcTime()} | offset ${delaySeconds}s")
                 }
+                record.openedAtEpochMillis?.let { opened ->
+                    val openDelaySeconds = (opened - record.publishedAtEpochMillis) / 1_000
+                    append(" | opened ${opened.utcTime()} | open offset ${openDelaySeconds}s")
+                }
                 appendLine()
             }
         }
@@ -237,6 +301,10 @@ class DeviceValidationReportExporter {
         appendLine(
             "A publication record means Android accepted the notification request; it does not " +
                 "prove that the user saw it or that the operating system delivered it exactly on time.",
+        )
+        appendLine(
+            "An open record means the notification content intent reached the app; its offset " +
+                "includes both operating-system delivery and user response time.",
         )
         append("Analysis-only validation; no broker execution capability.")
     }
