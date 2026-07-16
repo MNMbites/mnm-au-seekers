@@ -19,6 +19,12 @@ the dashboard still previews the next 60-minute plan but no briefing work is
 scheduled. Enabling a lead time requests Android notification permission only
 after that user action.
 
+The notification policy can include both sessions, London only, or New York
+only. The dashboard preview and background worker use the same selection.
+Device-local quiet hours can suppress publication even during an active session
+window. Full policy behavior is described in
+[notification-filters.md](notification-filters.md).
+
 ## Preparation plan
 
 Each plan contains:

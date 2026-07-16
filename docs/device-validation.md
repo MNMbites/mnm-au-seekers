@@ -15,7 +15,8 @@ The card evaluates the current installation and selected symbol for:
 - current market-readiness status and score;
 - economic-calendar availability;
 - Android notification permission and the app notification switch;
-- the setup-alert and pre-market schedule settings; and
+- the setup-alert and pre-market schedule settings;
+- the active confidence, setup-stage, session, and quiet-hours filters; and
 - recent notification publication records.
 
 `Pass` means the current app state supplies the requested evidence. `Check`

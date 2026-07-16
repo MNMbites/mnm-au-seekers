@@ -22,7 +22,7 @@ class DeviceValidationTest {
     fun liveConfiguredInstallationPassesCoreDeviceChecks() {
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.10.0",
+            appVersion = "0.11.0",
             liveServiceConfigured = true,
             feed = liveFeed(),
             marketHealth = health(MarketHealthLevel.READY),
@@ -33,7 +33,7 @@ class DeviceValidationTest {
             notificationAudit = listOf(audit()),
         )
 
-        assertEquals(9, report.passCount)
+        assertEquals(10, report.passCount)
         assertEquals(0, report.checkCount)
         assertEquals(0, report.blockedCount)
     }
@@ -42,7 +42,7 @@ class DeviceValidationTest {
     fun demoInstallationIsExplicitlyBlockedAndSchedulesRemainOptional() {
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.10.0",
+            appVersion = "0.11.0",
             liveServiceConfigured = false,
             feed = MarketDataFeed(
                 symbol = "XAUUSD",
@@ -61,7 +61,7 @@ class DeviceValidationTest {
 
         assertEquals(4, report.blockedCount)
         assertEquals(4, report.checkCount)
-        assertEquals(1, report.passCount)
+        assertEquals(2, report.passCount)
         assertTrue(report.items.any {
             it.label == "MT5 feed state" && it.status == ValidationStatus.BLOCKED
         })
@@ -74,7 +74,7 @@ class DeviceValidationTest {
         }
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.10.0",
+            appVersion = "0.11.0",
             liveServiceConfigured = true,
             feed = liveFeed(),
             marketHealth = health(MarketHealthLevel.READY),
@@ -94,7 +94,7 @@ class DeviceValidationTest {
     fun exportIsRedactedAndExplainsPublicationEvidence() {
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.10.0",
+            appVersion = "0.11.0",
             liveServiceConfigured = true,
             feed = liveFeed().copy(statusMessage = "https://secret.example token=do-not-export"),
             marketHealth = health(MarketHealthLevel.READY),

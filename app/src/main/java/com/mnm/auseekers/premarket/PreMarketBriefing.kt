@@ -44,9 +44,10 @@ class PreMarketSessionPlanner {
     fun nextWindow(
         now: Instant,
         leadTime: PreMarketLeadTime,
+        allowedSessions: Set<MarketSession> = MarketSession.entries.toSet(),
     ): PreMarketWindow? {
-        if (leadTime == PreMarketLeadTime.OFF) return null
-        val candidates = MarketSession.entries.flatMap { session ->
+        if (leadTime == PreMarketLeadTime.OFF || allowedSessions.isEmpty()) return null
+        val candidates = MarketSession.entries.filter { it in allowedSessions }.flatMap { session ->
             val localDate = now.atZone(session.zoneId).toLocalDate()
             (0L..4L)
                 .map { localDate.plusDays(it) }

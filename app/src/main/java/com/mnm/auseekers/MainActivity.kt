@@ -92,6 +92,12 @@ import com.mnm.auseekers.journal.AnalysisJournalStatistics
 import com.mnm.auseekers.journal.AnalysisJournalStatisticsCalculator
 import com.mnm.auseekers.journal.AndroidAnalysisJournalRepository
 import com.mnm.auseekers.notifications.NotificationInterval
+import com.mnm.auseekers.notifications.NotificationConfidenceFilter
+import com.mnm.auseekers.notifications.NotificationPolicy
+import com.mnm.auseekers.notifications.NotificationPolicyStore
+import com.mnm.auseekers.notifications.NotificationQuietHours
+import com.mnm.auseekers.notifications.NotificationSessionFilter
+import com.mnm.auseekers.notifications.SetupStageFilter
 import com.mnm.auseekers.notifications.SetupNotificationScheduler
 import com.mnm.auseekers.notifications.SetupNotificationPublisher
 import com.mnm.auseekers.paper.AndroidPaperTradingRepository
@@ -155,6 +161,9 @@ private fun MnmAuSeekersApp(
     var selectedSymbol by rememberSaveable { mutableStateOf(DEFAULT_SYMBOL) }
     var notificationInterval by rememberSaveable {
         mutableStateOf(SetupNotificationScheduler.currentInterval(context))
+    }
+    var notificationPolicy by remember {
+        mutableStateOf(NotificationPolicyStore.current(context))
     }
     var pendingNotificationInterval by remember { mutableStateOf<NotificationInterval?>(null) }
     var pendingPreMarketLeadTime by remember { mutableStateOf<PreMarketLeadTime?>(null) }
@@ -262,7 +271,12 @@ private fun MnmAuSeekersApp(
     val economicCalendarAssessment = remember(economicCalendarFeed, sessionClock) {
         EconomicCalendarRiskEvaluator().evaluate(economicCalendarFeed, sessionClock)
     }
-    val preMarketWindow = remember(preMarketLeadTime, refreshRequest, sessionClock) {
+    val preMarketWindow = remember(
+        preMarketLeadTime,
+        notificationPolicy.sessionFilter,
+        refreshRequest,
+        sessionClock,
+    ) {
         PreMarketSessionPlanner().nextWindow(
             now = sessionClock,
             leadTime = if (preMarketLeadTime == PreMarketLeadTime.OFF) {
@@ -270,6 +284,7 @@ private fun MnmAuSeekersApp(
             } else {
                 preMarketLeadTime
             },
+            allowedSessions = notificationPolicy.allowedSessions(),
         )
     }
     val preMarketBriefing = remember(
@@ -296,6 +311,7 @@ private fun MnmAuSeekersApp(
         economicCalendarAssessment,
         notificationInterval,
         preMarketLeadTime,
+        notificationPolicy,
         notificationAudit,
     ) {
         DeviceValidationEvaluator().evaluate(
@@ -309,6 +325,7 @@ private fun MnmAuSeekersApp(
             setupInterval = notificationInterval,
             preMarketLeadTime = preMarketLeadTime,
             notificationAudit = notificationAudit,
+            notificationPolicy = notificationPolicy,
         )
     }
     val historicalPoints by produceState(
@@ -486,6 +503,15 @@ private fun MnmAuSeekersApp(
                             pendingNotificationInterval = interval
                             permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
+                    },
+                )
+            }
+            item {
+                NotificationPolicyCard(
+                    policy = notificationPolicy,
+                    onPolicyChanged = { policy ->
+                        NotificationPolicyStore.set(context, policy)
+                        notificationPolicy = policy
                     },
                 )
             }
@@ -1176,6 +1202,60 @@ private fun NotificationSettings(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@Composable
+private fun NotificationPolicyCard(
+    policy: NotificationPolicy,
+    onPolicyChanged: (NotificationPolicy) -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("NOTIFICATION FILTERS", fontWeight = FontWeight.Black)
+            Text(
+                "Setup alerts and pre-market briefings remain independent categories; " +
+                    "turn either schedule Off to disable that category.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            ChoiceSection(
+                title = "Minimum confidence",
+                options = NotificationConfidenceFilter.entries,
+                selected = policy.confidenceFilter,
+                label = { it.label },
+                onSelected = { onPolicyChanged(policy.copy(confidenceFilter = it)) },
+            )
+            ChoiceSection(
+                title = "Setup stage",
+                options = SetupStageFilter.entries,
+                selected = policy.setupStageFilter,
+                label = { it.label },
+                onSelected = { onPolicyChanged(policy.copy(setupStageFilter = it)) },
+            )
+            ChoiceSection(
+                title = "Pre-market sessions",
+                options = NotificationSessionFilter.entries,
+                selected = policy.sessionFilter,
+                label = { it.label },
+                onSelected = { onPolicyChanged(policy.copy(sessionFilter = it)) },
+            )
+            ChoiceSection(
+                title = "Quiet hours • device time",
+                options = NotificationQuietHours.entries,
+                selected = policy.quietHours,
+                label = { it.label },
+                onSelected = { onPolicyChanged(policy.copy(quietHours = it)) },
+            )
+            Text(
+                "Quiet hours suppress background publication; Android periodic work remains " +
+                    "approximate and resumes on a later eligible check.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

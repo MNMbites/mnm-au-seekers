@@ -27,6 +27,7 @@ import com.mnm.auseekers.data.HttpMarketDataProvider
 import com.mnm.auseekers.data.calendarCurrenciesForSymbol
 import com.mnm.auseekers.domain.SignalEngine
 import com.mnm.auseekers.domain.TradingMode
+import com.mnm.auseekers.notifications.NotificationPolicyStore
 import com.mnm.auseekers.notifications.SetupNotificationPublisher
 import com.mnm.auseekers.validation.NotificationAuditKind
 import com.mnm.auseekers.validation.NotificationAuditRecorder
@@ -89,7 +90,13 @@ class PreMarketBriefingWorker(
         val leadTime = PreMarketBriefingScheduler.currentLeadTime(applicationContext)
         if (leadTime == PreMarketLeadTime.OFF) return Result.success()
         val now = Instant.now()
-        val window = PreMarketSessionPlanner().nextWindow(now, leadTime)
+        val notificationPolicy = NotificationPolicyStore.current(applicationContext)
+        if (notificationPolicy.isQuietAt(now)) return Result.success()
+        val window = PreMarketSessionPlanner().nextWindow(
+            now,
+            leadTime,
+            notificationPolicy.allowedSessions(),
+        )
             ?: return Result.success()
         if (!window.active) return Result.success()
         val baseUrl = BuildConfig.MARKET_DATA_BASE_URL.trim()

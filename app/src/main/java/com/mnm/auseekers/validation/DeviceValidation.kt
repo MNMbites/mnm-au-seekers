@@ -8,6 +8,7 @@ import com.mnm.auseekers.data.FeedState
 import com.mnm.auseekers.data.MarketDataFeed
 import com.mnm.auseekers.domain.Timeframe
 import com.mnm.auseekers.notifications.NotificationInterval
+import com.mnm.auseekers.notifications.NotificationPolicy
 import com.mnm.auseekers.premarket.PreMarketLeadTime
 import java.time.Instant
 import java.time.ZoneOffset
@@ -64,6 +65,7 @@ class DeviceValidationEvaluator {
         setupInterval: NotificationInterval,
         preMarketLeadTime: PreMarketLeadTime,
         notificationAudit: List<NotificationAuditRecord>,
+        notificationPolicy: NotificationPolicy = NotificationPolicy(),
     ): DeviceValidationReport {
         val timeframes = feed.snapshots.map { it.timeframe }.toSet()
         val requiredTimeframes = setOf(Timeframe.M15, Timeframe.H1, Timeframe.H4)
@@ -130,6 +132,11 @@ class DeviceValidationEvaluator {
                     "Pre-market schedule",
                     preMarketLeadTime.label,
                     preMarketLeadTime != PreMarketLeadTime.OFF,
+                ),
+                ValidationItem(
+                    "Notification filters",
+                    ValidationStatus.PASS,
+                    notificationPolicy.summary(),
                 ),
                 ValidationItem(
                     "Notification publication evidence",

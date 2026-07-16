@@ -87,6 +87,62 @@ class SetupNotificationEvaluatorTest {
         assertNull(blocked)
     }
 
+    @Test
+    fun confirmedOnlyPolicySuppressesAnEarlySetup() {
+        val feed = MarketDataFeed(
+            symbol = "XAUUSD",
+            capturedAt = null,
+            state = FeedState.LIVE,
+            snapshots = listOf(
+                neutral(Timeframe.M15),
+                bullish(Timeframe.H1),
+                bullish(Timeframe.H4),
+            ),
+            bid = 2420.10,
+            ask = 2420.30,
+            ageSeconds = 30,
+            statusMessage = "test",
+        )
+        val defaultAlert = evaluator.evaluate(feed)
+        val filtered = evaluator.evaluate(
+            feed = feed,
+            notificationPolicy = NotificationPolicy(
+                setupStageFilter = SetupStageFilter.CONFIRMED_ONLY,
+            ),
+        )
+
+        requireNotNull(defaultAlert)
+        assertNull(filtered)
+    }
+
+    @Test
+    fun readyOnlyPolicySuppressesACautionSetup() {
+        val feed = MarketDataFeed(
+            symbol = "XAUUSD",
+            capturedAt = null,
+            state = FeedState.LIVE,
+            snapshots = listOf(
+                neutral(Timeframe.M15),
+                weakBullish(Timeframe.H1),
+                weakBullish(Timeframe.H4),
+            ),
+            bid = 2420.10,
+            ask = 2420.30,
+            ageSeconds = 90,
+            statusMessage = "test",
+        )
+        val defaultAlert = evaluator.evaluate(feed)
+        val filtered = evaluator.evaluate(
+            feed = feed,
+            notificationPolicy = NotificationPolicy(
+                confidenceFilter = NotificationConfidenceFilter.READY_ONLY,
+            ),
+        )
+
+        requireNotNull(defaultAlert)
+        assertNull(filtered)
+    }
+
     private fun feed(
         state: FeedState,
         snapshot: (Timeframe) -> MarketSnapshot,
@@ -127,5 +183,33 @@ class SetupNotificationEvaluatorTest {
         bbLower = 100.0,
         rsi = 38.0,
         macdHistogram = -1.0,
+    )
+
+    private fun neutral(timeframe: Timeframe) = MarketSnapshot(
+        timeframe = timeframe,
+        close = 105.0,
+        ema5 = 105.0,
+        ma9 = 105.0,
+        ma21 = 105.0,
+        ma63 = 105.0,
+        ma84 = 105.0,
+        bbUpper = 110.0,
+        bbLower = 100.0,
+        rsi = 50.0,
+        macdHistogram = 0.0,
+    )
+
+    private fun weakBullish(timeframe: Timeframe) = MarketSnapshot(
+        timeframe = timeframe,
+        close = 106.0,
+        ema5 = 105.0,
+        ma9 = 104.0,
+        ma21 = 103.0,
+        ma63 = 103.0,
+        ma84 = 103.0,
+        bbUpper = 110.0,
+        bbLower = 100.0,
+        rsi = 50.0,
+        macdHistogram = 0.0,
     )
 }

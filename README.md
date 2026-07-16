@@ -36,6 +36,8 @@ backends.
   once-per-session XAU/USD alerts
 - Redacted on-device validation reports with live-feed, readiness, schedule,
   permission, and notification-publication evidence
+- Persisted notification filters for category schedules, confidence, setup
+  stage, London/New York sessions, and device-local quiet hours
 - A read-only MT5 EA that publishes quotes and indicator snapshots
 - A FastAPI ingestion service with token authentication and stale-data status
 - Durable snapshot history and case-insensitive watchlists with Alembic
@@ -91,6 +93,8 @@ Session timing, preparation fields, and alert limitations are documented in
 [docs/pre-market-briefings.md](docs/pre-market-briefings.md).
 Physical-device and MT5 demo-feed evidence collection is documented in
 [docs/device-validation.md](docs/device-validation.md).
+Optional alert categories and filters are documented in
+[docs/notification-filters.md](docs/notification-filters.md).
 
 ## Roadmap
 

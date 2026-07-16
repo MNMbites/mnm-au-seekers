@@ -30,6 +30,8 @@ class SetupNotificationWorker(
         val calendarProvider = runCatching { HttpEconomicCalendarProvider(baseUrl) }
             .getOrElse { return Result.failure() }
         val calendarPolicy = EconomicCalendarPolicyStore.current(applicationContext)
+        val notificationPolicy = NotificationPolicyStore.current(applicationContext)
+        if (notificationPolicy.isQuietAt(Instant.now())) return Result.success()
         val symbols = runCatching { provider.watchlist() }
             .getOrElse { return Result.retry() }
             .ifEmpty { listOf(DEFAULT_SYMBOL) }
@@ -55,6 +57,7 @@ class SetupNotificationWorker(
                     feed,
                     calendarAssessment,
                     calendarPolicy,
+                    notificationPolicy,
                 )
                 if (notification == null) {
                     deduplicator.clear(symbol)
