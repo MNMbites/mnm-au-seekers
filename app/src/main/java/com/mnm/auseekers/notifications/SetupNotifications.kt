@@ -30,6 +30,8 @@ import com.mnm.auseekers.domain.Direction
 import com.mnm.auseekers.domain.SetupStage
 import com.mnm.auseekers.domain.SignalEngine
 import com.mnm.auseekers.domain.TradingMode
+import com.mnm.auseekers.validation.NotificationAuditKind
+import com.mnm.auseekers.validation.NotificationAuditRecorder
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -200,6 +202,13 @@ object SetupNotificationPublisher {
             notification.symbol.hashCode() and Int.MAX_VALUE,
             rendered,
         )
+        runCatching {
+            NotificationAuditRecorder(context).record(
+                kind = NotificationAuditKind.SETUP,
+                symbol = notification.symbol,
+                context = "${notification.fingerprint.substringBeforeLast(':')} setup",
+            )
+        }
     }
 
     private fun createChannel(context: Context) {

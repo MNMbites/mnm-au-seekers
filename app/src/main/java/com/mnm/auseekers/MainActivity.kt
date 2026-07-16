@@ -93,6 +93,7 @@ import com.mnm.auseekers.journal.AnalysisJournalStatisticsCalculator
 import com.mnm.auseekers.journal.AndroidAnalysisJournalRepository
 import com.mnm.auseekers.notifications.NotificationInterval
 import com.mnm.auseekers.notifications.SetupNotificationScheduler
+import com.mnm.auseekers.notifications.SetupNotificationPublisher
 import com.mnm.auseekers.paper.AndroidPaperTradingRepository
 import com.mnm.auseekers.paper.OpenPaperTradeRequest
 import com.mnm.auseekers.paper.PaperAuditStatus
@@ -108,6 +109,11 @@ import com.mnm.auseekers.premarket.PreMarketLeadTime
 import com.mnm.auseekers.premarket.PreMarketSessionPlanner
 import com.mnm.auseekers.premarket.PreMarketWindow
 import com.mnm.auseekers.ui.theme.MnmAuSeekersTheme
+import com.mnm.auseekers.validation.DeviceValidationEvaluator
+import com.mnm.auseekers.validation.DeviceValidationReport
+import com.mnm.auseekers.validation.DeviceValidationReportExporter
+import com.mnm.auseekers.validation.NotificationAuditRecorder
+import com.mnm.auseekers.validation.ValidationStatus
 import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
@@ -172,6 +178,8 @@ private fun MnmAuSeekersApp(
     var journal by remember { mutableStateOf(journalRepository.load()) }
     var journalNote by rememberSaveable { mutableStateOf("") }
     var journalMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var validationRefreshRequest by rememberSaveable { mutableIntStateOf(0) }
+    var validationMessage by rememberSaveable { mutableStateOf<String?>(null) }
     val journalStatistics = remember(journal) {
         AnalysisJournalStatisticsCalculator().calculate(journal)
     }
@@ -180,6 +188,9 @@ private fun MnmAuSeekersApp(
             delay(60_000)
             value = Instant.now()
         }
+    }
+    val notificationAudit = remember(validationRefreshRequest) {
+        NotificationAuditRecorder(context).load()
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -277,6 +288,28 @@ private fun MnmAuSeekersApp(
                 economicCalendarAssessment,
             )
         }
+    }
+    val deviceValidationReport = remember(
+        sessionClock,
+        feed,
+        marketHealth,
+        economicCalendarAssessment,
+        notificationInterval,
+        preMarketLeadTime,
+        notificationAudit,
+    ) {
+        DeviceValidationEvaluator().evaluate(
+            generatedAtEpochMillis = sessionClock.toEpochMilli(),
+            appVersion = BuildConfig.VERSION_NAME,
+            liveServiceConfigured = BuildConfig.MARKET_DATA_BASE_URL.isNotBlank(),
+            feed = feed,
+            marketHealth = marketHealth,
+            calendar = economicCalendarAssessment,
+            notificationsEnabled = SetupNotificationPublisher.notificationsEnabled(context),
+            setupInterval = notificationInterval,
+            preMarketLeadTime = preMarketLeadTime,
+            notificationAudit = notificationAudit,
+        )
     }
     val historicalPoints by produceState(
         initialValue = emptyList(),
@@ -452,6 +485,28 @@ private fun MnmAuSeekersApp(
                         } else {
                             pendingNotificationInterval = interval
                             permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    },
+                )
+            }
+            item {
+                DeviceValidationCard(
+                    report = deviceValidationReport,
+                    message = validationMessage,
+                    onRefresh = {
+                        validationRefreshRequest += 1
+                        validationMessage = "Validation evidence refreshed."
+                    },
+                    onExport = {
+                        runCatching {
+                            shareDeviceValidationReport(
+                                context,
+                                DeviceValidationReportExporter().export(deviceValidationReport),
+                            )
+                        }.onSuccess {
+                            validationMessage = "Redacted validation report opened for sharing."
+                        }.onFailure {
+                            validationMessage = it.message ?: "Validation report could not be shared."
                         }
                     },
                 )
@@ -803,6 +858,66 @@ private fun BriefingLine(label: String, value: String) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium)
         Text(value)
+    }
+}
+
+@Composable
+private fun DeviceValidationCard(
+    report: DeviceValidationReport,
+    message: String?,
+    onRefresh: () -> Unit,
+    onExport: () -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("DEVICE VALIDATION", fontWeight = FontWeight.Black)
+            Text(
+                "${report.passCount} pass • ${report.checkCount} check • " +
+                    "${report.blockedCount} blocked",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            report.items.forEach { item ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Text(
+                        text = when (item.status) {
+                            ValidationStatus.PASS -> "PASS"
+                            ValidationStatus.CHECK -> "CHECK"
+                            ValidationStatus.BLOCKED -> "BLOCK"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Black,
+                        color = when (item.status) {
+                            ValidationStatus.PASS -> Color(0xFF006C4C)
+                            ValidationStatus.CHECK -> Color(0xFF8A5300)
+                            ValidationStatus.BLOCKED -> MaterialTheme.colorScheme.error
+                        },
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(item.label, fontWeight = FontWeight.SemiBold)
+                        Text(item.detail, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(onClick = onRefresh) { Text("Refresh evidence") }
+                Button(onClick = onExport) { Text("Share report") }
+            }
+            message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            Text(
+                "The report is redacted and analysis-only. Publication evidence confirms an " +
+                    "Android notification request, not visibility or exact delivery time.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -1559,5 +1674,16 @@ private fun sharePaperCsv(context: Context, csv: String) {
     }
     context.startActivity(
         Intent.createChooser(shareIntent, "Share paper audit CSV"),
+    )
+}
+
+private fun shareDeviceValidationReport(context: Context, report: String) {
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, "MNM AU Seekers device validation")
+        putExtra(Intent.EXTRA_TEXT, report)
+    }
+    context.startActivity(
+        Intent.createChooser(shareIntent, "Share device validation report"),
     )
 }

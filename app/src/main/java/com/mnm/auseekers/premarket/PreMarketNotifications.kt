@@ -28,6 +28,8 @@ import com.mnm.auseekers.data.calendarCurrenciesForSymbol
 import com.mnm.auseekers.domain.SignalEngine
 import com.mnm.auseekers.domain.TradingMode
 import com.mnm.auseekers.notifications.SetupNotificationPublisher
+import com.mnm.auseekers.validation.NotificationAuditKind
+import com.mnm.auseekers.validation.NotificationAuditRecorder
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 
@@ -170,6 +172,14 @@ object PreMarketBriefingPublisher {
             briefing.window.fingerprint.hashCode() and Int.MAX_VALUE,
             notification,
         )
+        runCatching {
+            NotificationAuditRecorder(context).record(
+                kind = NotificationAuditKind.PRE_MARKET,
+                symbol = symbol,
+                expectedAtEpochMillis = briefing.window.briefingStartsAt.toEpochMilli(),
+                context = briefing.window.session.label,
+            )
+        }
     }
 
     private fun createChannel(context: Context) {
