@@ -101,7 +101,14 @@ import com.mnm.auseekers.paper.PaperPerformanceAnalyzer
 import com.mnm.auseekers.paper.PaperPerformanceReport
 import com.mnm.auseekers.paper.PaperPortfolio
 import com.mnm.auseekers.paper.PaperPosition
+import com.mnm.auseekers.premarket.PreMarketBriefing
+import com.mnm.auseekers.premarket.PreMarketBriefingGenerator
+import com.mnm.auseekers.premarket.PreMarketBriefingScheduler
+import com.mnm.auseekers.premarket.PreMarketLeadTime
+import com.mnm.auseekers.premarket.PreMarketSessionPlanner
+import com.mnm.auseekers.premarket.PreMarketWindow
 import com.mnm.auseekers.ui.theme.MnmAuSeekersTheme
+import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -144,6 +151,10 @@ private fun MnmAuSeekersApp(
         mutableStateOf(SetupNotificationScheduler.currentInterval(context))
     }
     var pendingNotificationInterval by remember { mutableStateOf<NotificationInterval?>(null) }
+    var pendingPreMarketLeadTime by remember { mutableStateOf<PreMarketLeadTime?>(null) }
+    var preMarketLeadTime by rememberSaveable {
+        mutableStateOf(PreMarketBriefingScheduler.currentLeadTime(context))
+    }
     var economicCalendarPolicy by rememberSaveable {
         mutableStateOf(EconomicCalendarPolicyStore.current(context))
     }
@@ -164,6 +175,12 @@ private fun MnmAuSeekersApp(
     val journalStatistics = remember(journal) {
         AnalysisJournalStatisticsCalculator().calculate(journal)
     }
+    val sessionClock by produceState(initialValue = Instant.now()) {
+        while (true) {
+            delay(60_000)
+            value = Instant.now()
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -173,7 +190,13 @@ private fun MnmAuSeekersApp(
             SetupNotificationScheduler.schedule(context, pending)
             notificationInterval = pending
         }
+        val pendingBriefing = pendingPreMarketLeadTime
+        if (granted && pendingBriefing != null) {
+            PreMarketBriefingScheduler.schedule(context, pendingBriefing)
+            preMarketLeadTime = pendingBriefing
+        }
         pendingNotificationInterval = null
+        pendingPreMarketLeadTime = null
     }
 
     val symbols by produceState(
@@ -225,8 +248,35 @@ private fun MnmAuSeekersApp(
             to = now.plusSeconds(24 * 60 * 60L),
         )
     }
-    val economicCalendarAssessment = remember(economicCalendarFeed) {
-        EconomicCalendarRiskEvaluator().evaluate(economicCalendarFeed)
+    val economicCalendarAssessment = remember(economicCalendarFeed, sessionClock) {
+        EconomicCalendarRiskEvaluator().evaluate(economicCalendarFeed, sessionClock)
+    }
+    val preMarketWindow = remember(preMarketLeadTime, refreshRequest, sessionClock) {
+        PreMarketSessionPlanner().nextWindow(
+            now = sessionClock,
+            leadTime = if (preMarketLeadTime == PreMarketLeadTime.OFF) {
+                PreMarketLeadTime.SIXTY_MINUTES
+            } else {
+                preMarketLeadTime
+            },
+        )
+    }
+    val preMarketBriefing = remember(
+        preMarketWindow,
+        feed,
+        analysis,
+        marketHealth,
+        economicCalendarAssessment,
+    ) {
+        preMarketWindow?.takeIf { feed.symbol == DEFAULT_SYMBOL }?.let { window ->
+            PreMarketBriefingGenerator().generate(
+                window,
+                feed,
+                analysis,
+                marketHealth,
+                economicCalendarAssessment,
+            )
+        }
     }
     val historicalPoints by produceState(
         initialValue = emptyList(),
@@ -327,6 +377,26 @@ private fun MnmAuSeekersApp(
                     onPolicySelected = { policy ->
                         EconomicCalendarPolicyStore.set(context, policy)
                         economicCalendarPolicy = policy
+                    },
+                )
+            }
+            item {
+                PreMarketBriefingCard(
+                    window = preMarketWindow,
+                    briefing = preMarketBriefing,
+                    selectedSymbol = selectedSymbol,
+                    selectedLeadTime = preMarketLeadTime,
+                    onLeadTimeSelected = { leadTime ->
+                        if (leadTime == PreMarketLeadTime.OFF) {
+                            PreMarketBriefingScheduler.cancel(context)
+                            preMarketLeadTime = leadTime
+                        } else if (notificationPermissionGranted(context)) {
+                            PreMarketBriefingScheduler.schedule(context, leadTime)
+                            preMarketLeadTime = leadTime
+                        } else {
+                            pendingPreMarketLeadTime = leadTime
+                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
                     },
                 )
             }
@@ -654,6 +724,85 @@ private fun EconomicCalendarCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+@Composable
+private fun PreMarketBriefingCard(
+    window: PreMarketWindow?,
+    briefing: PreMarketBriefing?,
+    selectedSymbol: String,
+    selectedLeadTime: PreMarketLeadTime,
+    onLeadTimeSelected: (PreMarketLeadTime) -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("PRE-MARKET BRIEFING", fontWeight = FontWeight.Black)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(PreMarketLeadTime.entries, key = { it.name }) { option ->
+                    FilterChip(
+                        selected = option == selectedLeadTime,
+                        onClick = { onLeadTimeSelected(option) },
+                        label = { Text(option.label) },
+                    )
+                }
+            }
+            Text(
+                if (selectedLeadTime == PreMarketLeadTime.OFF) {
+                    "Briefing alerts are off; the next 60-minute plan is previewed below."
+                } else {
+                    "One XAU/USD alert is allowed per session during the selected lead window."
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (window != null && briefing != null) {
+                Text(
+                    "${window.session.label} • " +
+                        (if (window.active) "briefing window active" else "next session"),
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    "Opens ${PRE_MARKET_TIME_FORMATTER.format(window.opensAt)} local • " +
+                        "session open 08:00 ${window.session.zoneId.id}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                BriefingLine("Overall trend", briefing.overallTrend)
+                BriefingLine("Confidence", briefing.confidence)
+                BriefingLine("Important levels", briefing.importantLevels)
+                BriefingLine("Expected behavior", briefing.expectedBehavior)
+                BriefingLine("Primary bias", briefing.primaryBias)
+                BriefingLine("Alternative", briefing.alternativeScenario)
+                BriefingLine("Risk", briefing.riskGuidance)
+                Text(
+                    briefing.sourceNotice,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else if (selectedSymbol != DEFAULT_SYMBOL) {
+                Text(
+                    "Select $DEFAULT_SYMBOL to preview its London/New York preparation plan.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                "Session preparation is deterministic analysis context, not a prediction, " +
+                    "trade instruction, or guarantee.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BriefingLine(label: String, value: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium)
+        Text(value)
     }
 }
 
@@ -1347,6 +1496,10 @@ private fun Double.format(decimals: Int): String = String.format(Locale.US, "%.$
 
 private val JOURNAL_TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter
     .ofPattern("MMM d, HH:mm", Locale.US)
+    .withZone(ZoneId.systemDefault())
+
+private val PRE_MARKET_TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter
+    .ofPattern("EEE MMM d, HH:mm", Locale.US)
     .withZone(ZoneId.systemDefault())
 
 private fun String.numericInput(): String = filterIndexed { index, character ->

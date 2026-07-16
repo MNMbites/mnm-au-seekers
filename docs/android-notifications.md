@@ -55,5 +55,10 @@ Notification evaluation uses only the public read endpoints. The Android app
 does not receive the bridge token, watchlist admin token, MT5 credentials,
 account data, or any execution capability.
 
+Pre-market briefings use a separate opt-in schedule described in
+[pre-market-briefings.md](pre-market-briefings.md). They share Android's
+notification permission but have their own WorkManager task, channel, settings,
+and once-per-session deduplication state.
+
 See [market-health.md](market-health.md) for the readiness factors and confidence
 language included in each alert.
