@@ -60,5 +60,10 @@ Pre-market briefings use a separate opt-in schedule described in
 notification permission but have their own WorkManager task, channel, settings,
 and once-per-session deduplication state.
 
+For physical-device timing checks, successful notification publication requests
+are recorded locally in a bounded, redacted audit described in
+[device-validation.md](device-validation.md). This evidence does not prove that
+Android displayed the notification or that the user saw it.
+
 See [market-health.md](market-health.md) for the readiness factors and confidence
 language included in each alert.
