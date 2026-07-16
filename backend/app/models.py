@@ -33,11 +33,37 @@ class TimeframeIndicators(BaseModel):
     bb_lower: float = Field(gt=0)
     rsi: float = Field(ge=0, le=100)
     macd_histogram: float
+    previous_ema5: float | None = Field(default=None, gt=0)
+    previous_ma9: float | None = Field(default=None, gt=0)
+    previous_ma21: float | None = Field(default=None, gt=0)
+    previous_ma63: float | None = Field(default=None, gt=0)
+    previous_ma84: float | None = Field(default=None, gt=0)
+    previous_bb_upper: float | None = Field(default=None, gt=0)
+    previous_bb_lower: float | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def validate_bollinger_band(self) -> "TimeframeIndicators":
         if self.bb_lower > self.bb_upper:
             raise ValueError("bb_lower must not exceed bb_upper")
+        if (
+            self.previous_bb_lower is not None
+            and self.previous_bb_upper is not None
+            and self.previous_bb_lower > self.previous_bb_upper
+        ):
+            raise ValueError("previous_bb_lower must not exceed previous_bb_upper")
+        previous_values = (
+            self.previous_ema5,
+            self.previous_ma9,
+            self.previous_ma21,
+            self.previous_ma63,
+            self.previous_ma84,
+            self.previous_bb_upper,
+            self.previous_bb_lower,
+        )
+        if any(value is None for value in previous_values) and not all(
+            value is None for value in previous_values
+        ):
+            raise ValueError("previous indicator values must be supplied together")
         return self
 
 

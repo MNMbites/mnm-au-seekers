@@ -19,6 +19,7 @@ class MarketDataProviderTest {
         assertEquals(30, feed.ageSeconds)
         assertEquals(2420.10, feed.bid!!, 0.0001)
         assertEquals(2420.30, feed.ask!!, 0.0001)
+        assertEquals(2419.60, feed.snapshots.first().previousEma5!!, 0.0001)
     }
 
     @Test
@@ -47,6 +48,16 @@ class MarketDataProviderTest {
         val error = runCatching { parser.parse(invalid) }.exceptionOrNull()
 
         assertTrue(error is IOException)
+    }
+
+    @Test
+    fun rejectsPartialPreviousIndicatorValues() {
+        val invalid = validEnvelope().replace(
+            "\"previous_bb_lower\": 2407.80,",
+            "",
+        )
+
+        assertTrue(runCatching { parser.parse(invalid) }.exceptionOrNull() is IOException)
     }
 
     @Test
@@ -147,6 +158,13 @@ class MarketDataProviderTest {
           "ma84": 2408.50,
           "bb_upper": 2425.00,
           "bb_lower": 2408.00,
+          "previous_ema5": 2419.60,
+          "previous_ma9": 2419.20,
+          "previous_ma21": 2418.60,
+          "previous_ma63": 2412.00,
+          "previous_ma84": 2408.30,
+          "previous_bb_upper": 2424.80,
+          "previous_bb_lower": 2407.80,
           "rsi": 58.0,
           "macd_histogram": 0.42
         }

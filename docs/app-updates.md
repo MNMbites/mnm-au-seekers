@@ -82,8 +82,8 @@ must be from 0 to 999 and every release version must increase. After the release
 commit is merged into the default branch, create and push the tag:
 
 ```bash
-git tag v0.15.0
-git push origin v0.15.0
+git tag v0.16.0
+git push origin v0.16.0
 ```
 
 `.github/workflows/android-release.yml` verifies that the tagged commit belongs

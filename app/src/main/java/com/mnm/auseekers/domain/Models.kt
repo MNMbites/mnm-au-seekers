@@ -29,6 +29,13 @@ enum class SetupStage(val label: String) {
     CONFIRMED("Confirmed"),
 }
 
+enum class TrendDirection(val label: String, val sign: Int) {
+    RISING("Rising", 1),
+    FLAT("Flat/mixed", 0),
+    FALLING("Falling", -1),
+    UNAVAILABLE("Unavailable", 0),
+}
+
 data class MarketSnapshot(
     val timeframe: Timeframe,
     val close: Double,
@@ -41,6 +48,13 @@ data class MarketSnapshot(
     val bbLower: Double,
     val rsi: Double,
     val macdHistogram: Double,
+    val previousEma5: Double? = null,
+    val previousMa9: Double? = null,
+    val previousMa21: Double? = null,
+    val previousMa63: Double? = null,
+    val previousMa84: Double? = null,
+    val previousBbUpper: Double? = null,
+    val previousBbLower: Double? = null,
 )
 
 data class TimeframeSignal(
@@ -48,6 +62,8 @@ data class TimeframeSignal(
     val direction: Direction,
     val strength: Int,
     val score: Int,
+    val maTrend: TrendDirection = TrendDirection.UNAVAILABLE,
+    val bollingerTrend: TrendDirection = TrendDirection.UNAVAILABLE,
 )
 
 data class MarketAnalysis(
