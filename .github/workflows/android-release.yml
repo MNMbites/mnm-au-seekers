@@ -1,0 +1,125 @@
+name: Android release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      GH_TOKEN: ${{ github.token }}
+      MNM_ANDROID_KEYSTORE_BASE64: ${{ secrets.MNM_ANDROID_KEYSTORE_BASE64 }}
+      MNM_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/mnm-au-seekers-release.jks
+      MNM_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.MNM_ANDROID_KEYSTORE_PASSWORD }}
+      MNM_ANDROID_KEY_ALIAS: ${{ secrets.MNM_ANDROID_KEY_ALIAS }}
+      MNM_ANDROID_KEY_PASSWORD: ${{ secrets.MNM_ANDROID_KEY_PASSWORD }}
+      MNM_ANDROID_CERT_SHA256: ${{ vars.MNM_ANDROID_CERT_SHA256 }}
+      MNM_BUILD_COMMIT_SHA: ${{ github.sha }}
+      MNM_MARKET_DATA_BASE_URL: ${{ vars.MNM_MARKET_DATA_BASE_URL }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Require a tag on the default branch
+        run: |
+          git fetch origin "$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+          git merge-base --is-ancestor "$GITHUB_SHA" "origin/$DEFAULT_BRANCH"
+
+      - name: Match tag to Android version
+        run: |
+          app_version=$(sed -n 's/^val appVersionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts)
+          test -n "$app_version"
+          test "$GITHUB_REF_NAME" = "v$app_version"
+          echo "APP_VERSION=$app_version" >> "$GITHUB_ENV"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Prepare stable release signing
+        run: |
+          for variable in \
+            MNM_ANDROID_KEYSTORE_BASE64 \
+            MNM_ANDROID_KEYSTORE_PASSWORD \
+            MNM_ANDROID_KEY_ALIAS \
+            MNM_ANDROID_KEY_PASSWORD
+          do
+            test -n "${!variable:-}" || {
+              echo "Missing required release-signing secret: $variable" >&2
+              exit 1
+            }
+          done
+          test -n "$MNM_ANDROID_CERT_SHA256" || {
+            echo "Missing required release certificate variable: MNM_ANDROID_CERT_SHA256" >&2
+            exit 1
+          }
+          umask 077
+          printf '%s' "$MNM_ANDROID_KEYSTORE_BASE64" | base64 --decode \
+            > "$MNM_ANDROID_KEYSTORE_PATH"
+          keytool -list \
+            -keystore "$MNM_ANDROID_KEYSTORE_PATH" \
+            -storepass:env MNM_ANDROID_KEYSTORE_PASSWORD \
+            -alias "$MNM_ANDROID_KEY_ALIAS" > /dev/null
+          actual_fingerprint=$(
+            keytool -exportcert \
+              -keystore "$MNM_ANDROID_KEYSTORE_PATH" \
+              -storepass:env MNM_ANDROID_KEYSTORE_PASSWORD \
+              -alias "$MNM_ANDROID_KEY_ALIAS" \
+              -rfc \
+              | openssl x509 -noout -fingerprint -sha256 \
+              | cut -d= -f2 \
+              | tr -d '[:space:]:' \
+              | tr '[:upper:]' '[:lower:]'
+          )
+          expected_fingerprint=$(printf '%s' "$MNM_ANDROID_CERT_SHA256" \
+            | tr -d '[:space:]:' \
+            | tr '[:upper:]' '[:lower:]')
+          test "$actual_fingerprint" = "$expected_fingerprint"
+
+      - name: Test, lint, and assemble signed release APK
+        run: gradle --no-daemon testReleaseUnitTest lintRelease assembleRelease
+
+      - name: Package versioned release APK
+        working-directory: app/build/outputs/apk/release
+        run: |
+          test -f app-release.apk
+          apksigner=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner \
+            | sort -V \
+            | tail -n 1)
+          test -n "$apksigner"
+          "$apksigner" verify --verbose --print-certs app-release.apk
+          release_apk="MNM-AU-Seekers-$APP_VERSION.apk"
+          cp app-release.apk "$release_apk"
+          sha256sum "$release_apk" > "$release_apk.sha256"
+
+      - name: Publish immutable GitHub release
+        working-directory: app/build/outputs/apk/release
+        run: |
+          release_apk="MNM-AU-Seekers-$APP_VERSION.apk"
+          gh release create "$GITHUB_REF_NAME" \
+            "$release_apk" \
+            "$release_apk.sha256" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --generate-notes \
+            --title "MNM AU Seekers $APP_VERSION"
+
+      - name: Remove release keystore
+        if: always()
+        run: rm -f "$MNM_ANDROID_KEYSTORE_PATH"

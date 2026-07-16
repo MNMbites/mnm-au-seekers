@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -66,6 +67,9 @@ import com.mnm.auseekers.analysis.MarketHealthAssessment
 import com.mnm.auseekers.analysis.MarketHealthEvaluator
 import com.mnm.auseekers.analysis.MarketHealthLevel
 import com.mnm.auseekers.data.DEFAULT_SYMBOL
+import com.mnm.auseekers.data.AppRelease
+import com.mnm.auseekers.data.AppUpdateEvaluator
+import com.mnm.auseekers.data.AppUpdateState
 import com.mnm.auseekers.data.DemoMarketDataProvider
 import com.mnm.auseekers.data.EconomicCalendarFeed
 import com.mnm.auseekers.data.EconomicCalendarPolicy
@@ -80,6 +84,8 @@ import com.mnm.auseekers.data.MarketDataProvider
 import com.mnm.auseekers.data.LiveAnalysisFeedReducer
 import com.mnm.auseekers.data.LiveAnalysisInterval
 import com.mnm.auseekers.data.LiveAnalysisRefreshStore
+import com.mnm.auseekers.data.GitHubReleaseUpdateProvider
+import com.mnm.auseekers.data.GitHubReleaseUrlPolicy
 import com.mnm.auseekers.data.UnavailableEconomicCalendarProvider
 import com.mnm.auseekers.data.calendarCurrenciesForSymbol
 import com.mnm.auseekers.domain.Direction
@@ -233,6 +239,9 @@ private fun MnmAuSeekersApp(
     var journalMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var validationRefreshRequest by rememberSaveable { mutableIntStateOf(0) }
     var validationMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var updateCheckRequest by rememberSaveable { mutableIntStateOf(0) }
+    var updateLaunchMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    val updateProvider = remember { GitHubReleaseUpdateProvider() }
     val journalStatistics = remember(journal) {
         AnalysisJournalStatisticsCalculator().calculate(journal)
     }
@@ -244,6 +253,19 @@ private fun MnmAuSeekersApp(
     }
     val notificationAudit = remember(validationRefreshRequest, notificationAuditRevision) {
         NotificationAuditRecorder(context).load()
+    }
+    val appUpdateState by produceState<AppUpdateState>(
+        initialValue = AppUpdateState.Idle,
+        key1 = updateProvider,
+        key2 = updateCheckRequest,
+    ) {
+        if (updateCheckRequest == 0) return@produceState
+        value = AppUpdateState.Checking
+        value = runCatching {
+            AppUpdateEvaluator().evaluate(BuildConfig.VERSION_NAME, updateProvider.latest())
+        }.getOrElse {
+            AppUpdateState.Error("Update check failed. Confirm internet access and try again.")
+        }
     }
     val lifecycleState by lifecycle.currentStateFlow.collectAsState()
     val liveAnalysisActive = BuildConfig.MARKET_DATA_BASE_URL.isNotBlank() &&
@@ -619,6 +641,35 @@ private fun MnmAuSeekersApp(
                     },
                 )
             }
+            item {
+                AppUpdateCard(
+                    installedVersion = BuildConfig.VERSION_NAME,
+                    state = appUpdateState,
+                    message = updateLaunchMessage,
+                    onCheck = {
+                        updateLaunchMessage = null
+                        updateCheckRequest += 1
+                    },
+                    onDownload = { release ->
+                        val trusted = GitHubReleaseUrlPolicy.isTrustedApkDownload(
+                            release.apkDownloadUrl,
+                            release.tagName,
+                        )
+                        val browserIntent = Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse(release.apkDownloadUrl),
+                        ).addCategory(Intent.CATEGORY_BROWSABLE)
+                        val opened = trusted &&
+                            browserIntent.resolveActivity(context.packageManager) != null &&
+                            runCatching { context.startActivity(browserIntent) }.isSuccess
+                        updateLaunchMessage = if (opened) {
+                            "Update download opened in the browser. Android will ask before install."
+                        } else {
+                            "No trusted browser handler is available for the update download."
+                        }
+                    },
+                )
+            }
             item { SectionTitle("Timeframe agreement") }
             items(analysis.timeframeSignals, key = { it.timeframe }) { signal ->
                 TimeframeCard(signal)
@@ -966,6 +1017,67 @@ private fun BriefingLine(label: String, value: String) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium)
         Text(value)
+    }
+}
+
+@Composable
+private fun AppUpdateCard(
+    installedVersion: String,
+    state: AppUpdateState,
+    message: String?,
+    onCheck: () -> Unit,
+    onDownload: (AppRelease) -> Unit,
+) {
+    Card {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("APP UPDATES", fontWeight = FontWeight.Black)
+            Text(
+                "Installed version $installedVersion",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            when (state) {
+                AppUpdateState.Idle -> Text(
+                    "Check the official MNM AU Seekers GitHub Releases page for a newer APK.",
+                )
+                AppUpdateState.Checking -> Text("Checking the official release channel…")
+                AppUpdateState.NoPublishedRelease -> Text(
+                    "No managed APK release has been published yet.",
+                )
+                is AppUpdateState.Current -> Text(
+                    "This installation is current. Latest release: ${state.latestVersion}.",
+                )
+                is AppUpdateState.Available -> {
+                    Text(
+                        "Version ${state.release.version} is available.",
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Button(onClick = { onDownload(state.release) }) {
+                        Text("Open update download")
+                    }
+                }
+                is AppUpdateState.Error -> Text(
+                    state.detail,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            OutlinedButton(
+                onClick = onCheck,
+                enabled = state != AppUpdateState.Checking,
+            ) {
+                Text(if (state == AppUpdateState.Checking) "Checking…" else "Check for updates")
+            }
+            message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            Text(
+                "Downloads open in the browser and Android always asks before installation. " +
+                    "The app never installs an update silently.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

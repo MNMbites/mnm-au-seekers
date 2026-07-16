@@ -44,6 +44,8 @@ backends.
   without notification-listener access or test alerts
 - Last-validated snapshot retention that blocks failed live polls as stale
   instead of silently replacing active analysis with demo values
+- Manual in-app update checks against validated GitHub Release APKs, backed by
+  stable secret-managed signing for future in-place upgrades
 - A read-only MT5 EA that publishes quotes and indicator snapshots
 - A FastAPI ingestion service with token authentication and stale-data status
 - Durable snapshot history and case-insensitive watchlists with Alembic
@@ -101,6 +103,8 @@ Physical-device and MT5 demo-feed evidence collection is documented in
 [docs/device-validation.md](docs/device-validation.md).
 Optional alert categories and filters are documented in
 [docs/notification-filters.md](docs/notification-filters.md).
+Sideloaded APK update checks, signing-key custody, and tagged release publishing
+are documented in [docs/app-updates.md](docs/app-updates.md).
 
 ## Roadmap
 

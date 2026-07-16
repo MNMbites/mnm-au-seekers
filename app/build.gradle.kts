@@ -4,6 +4,15 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val appVersionName = "0.15.0"
+val appVersionParts = appVersionName.split('.').map(String::toInt)
+require(appVersionParts.size == 3 && appVersionParts.all { it in 0..999 }) {
+    "App version must use MAJOR.MINOR.PATCH with components from 0 to 999."
+}
+val appVersionCode =
+    appVersionParts[0] * 1_000_000 + appVersionParts[1] * 1_000 + appVersionParts[2]
+require(appVersionCode > 0) { "App version must be greater than 0.0.0." }
+
 val marketDataBaseUrl = providers
     .environmentVariable("MNM_MARKET_DATA_BASE_URL")
     .orElse("")
@@ -14,6 +23,29 @@ val buildCommitSha = providers
     .orElse("local")
     .get()
 
+val releaseKeystorePath = providers.environmentVariable("MNM_ANDROID_KEYSTORE_PATH").orNull
+val releaseKeystorePassword = providers
+    .environmentVariable("MNM_ANDROID_KEYSTORE_PASSWORD")
+    .orNull
+val releaseKeyAlias = providers.environmentVariable("MNM_ANDROID_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("MNM_ANDROID_KEY_PASSWORD").orNull
+val managedReleaseSigningConfigured = listOf(
+    releaseKeystorePath,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { !it.isNullOrBlank() }
+val partialReleaseSigningConfigured = listOf(
+    releaseKeystorePath,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).any { !it.isNullOrBlank() } && !managedReleaseSigningConfigured
+
+require(!partialReleaseSigningConfigured) {
+    "Release signing requires the keystore path, passwords, and key alias together."
+}
+
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
@@ -21,12 +53,23 @@ android {
     namespace = "com.mnm.auseekers"
     compileSdk = 35
 
+    signingConfigs {
+        if (managedReleaseSigningConfigured) {
+            create("managedRelease") {
+                storeFile = file(requireNotNull(releaseKeystorePath))
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "com.mnm.auseekers"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.14.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField(
@@ -44,6 +87,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (managedReleaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("managedRelease")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
