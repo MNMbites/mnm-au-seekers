@@ -85,6 +85,8 @@ python -m pytest
 
 See [docs/mt5-bridge.md](docs/mt5-bridge.md) for backend and MT5 EA setup, and
 [docs/android-live-data.md](docs/android-live-data.md) for Android connectivity.
+For a containerized HTTPS backend and the live-enabled APK handoff, see
+[docs/live-deployment.md](docs/live-deployment.md).
 For production persistence and watchlist administration, see
 [docs/postgresql.md](docs/postgresql.md). Multi-symbol Android and notification
 behavior is documented in
