@@ -325,6 +325,7 @@ private fun MnmAuSeekersApp(
             setupInterval = notificationInterval,
             preMarketLeadTime = preMarketLeadTime,
             notificationAudit = notificationAudit,
+            buildCommit = BuildConfig.BUILD_COMMIT_SHA,
             notificationPolicy = notificationPolicy,
         )
     }
@@ -900,6 +901,11 @@ private fun DeviceValidationCard(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text("DEVICE VALIDATION", fontWeight = FontWeight.Black)
+            Text(
+                "Build ${report.appVersion} • ${report.buildCommit.take(12)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Text(
                 "${report.passCount} pass • ${report.checkCount} check • " +
                     "${report.blockedCount} blocked",

@@ -5,6 +5,47 @@ a redacted plain-text report. It is intended to collect comparable evidence
 from a physical device connected to the read-only bridge running against an MT5
 demo terminal.
 
+## CI validation APK
+
+Every successful Android CI job uploads a `mnm-au-seekers-debug-<run>` artifact
+for 14 days. The artifact contains:
+
+- `app-debug.apk`, a debuggable Android build for validation only; and
+- `app-debug.apk.sha256`, its SHA-256 checksum.
+
+The CI build embeds the workflow commit in `BuildConfig`. The device-validation
+card and exported report show the app version and normalized commit, allowing a
+report to be matched to the tested source and checksum. Local builds use
+`local` instead of inventing a commit identity.
+
+The live-service origin is not a credential, but it is compiled into the APK.
+To make a CI artifact usable with the read-only bridge, configure the repository
+Actions variable `MNM_MARKET_DATA_BASE_URL` with the deployed HTTPS origin. Do
+not put a bridge token, watchlist token, calendar token, MT5 password, query
+credential, or other secret in that value. When the variable is absent, the CI
+artifact remains demo-only and the checklist correctly blocks live validation.
+
+After downloading and extracting the artifact, verify it before installation:
+
+```bash
+sha256sum -c app-debug.apk.sha256
+adb install app-debug.apk
+```
+
+CI runners generate an ephemeral debug signing key. A device that already has a
+build signed by a different CI run may reject an update. In that case, export
+any needed validation report first, then remove the previous debug install and
+install the new artifact:
+
+```bash
+adb uninstall com.mnm.auseekers
+adb install app-debug.apk
+```
+
+Uninstalling clears private app state, including notification evidence and
+settings. CI artifacts are not production releases and must not be distributed
+as signed release builds.
+
 ## Checklist
 
 The card evaluates the current installation and selected symbol for:
@@ -58,10 +99,10 @@ notification promptly or that the user saw it.
 
 ## Redaction and safety boundary
 
-The report includes app version, symbol, feed capture time and age, checklist
-results, and bounded notification publication evidence. It excludes the service
-endpoint, all tokens, device identifiers, MT5 or broker account data, paper
-positions and results, and analysis-journal notes.
+The report includes app version, normalized build commit, symbol, feed capture
+time and age, checklist results, and bounded notification publication evidence.
+It excludes the service endpoint, all tokens, device identifiers, MT5 or broker
+account data, paper positions and results, and analysis-journal notes.
 
 The checklist performs no connectivity mutation, notification test blast,
 broker login, or order action. It adds no execution capability. Share the report
