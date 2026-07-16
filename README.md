@@ -17,8 +17,8 @@ backends.
 - Demo market snapshots so the UI can be reviewed before a data provider is
   connected
 - A versioned Android market-data provider boundary
-- A read-only Android HTTP provider with live/stale health, manual refresh, and
-  labelled demo fallback
+- A read-only Android HTTP provider with live/stale health, manual full refresh,
+  and opt-in 15/30/60-second foreground analysis polling
 - Backend-driven multi-symbol selection and opt-in 30/60-minute setup alerts
 - Explainable market readiness from source, freshness, relative spread, and
   timeframe agreement
@@ -42,6 +42,8 @@ backends.
   checksum for physical-device validation
 - Notification tap-through evidence with publication-to-open offsets, recorded
   without notification-listener access or test alerts
+- Last-validated snapshot retention that blocks failed live polls as stale
+  instead of silently replacing active analysis with demo values
 - A read-only MT5 EA that publishes quotes and indicator snapshots
 - A FastAPI ingestion service with token authentication and stale-data status
 - Durable snapshot history and case-insensitive watchlists with Alembic

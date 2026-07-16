@@ -38,6 +38,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import com.mnm.auseekers.analysis.HealthFactorState
 import com.mnm.auseekers.analysis.EconomicCalendarAssessment
 import com.mnm.auseekers.analysis.EconomicCalendarRiskEvaluator
@@ -75,6 +77,9 @@ import com.mnm.auseekers.data.HttpMarketDataProvider
 import com.mnm.auseekers.data.HttpEconomicCalendarProvider
 import com.mnm.auseekers.data.MarketDataFeed
 import com.mnm.auseekers.data.MarketDataProvider
+import com.mnm.auseekers.data.LiveAnalysisFeedReducer
+import com.mnm.auseekers.data.LiveAnalysisInterval
+import com.mnm.auseekers.data.LiveAnalysisRefreshStore
 import com.mnm.auseekers.data.UnavailableEconomicCalendarProvider
 import com.mnm.auseekers.data.calendarCurrenciesForSymbol
 import com.mnm.auseekers.domain.Direction
@@ -141,6 +146,7 @@ class MainActivity : ComponentActivity() {
                     economicCalendarProvider = calendarProvider,
                     initialFeed = initialMarketDataFeed(),
                     notificationAuditRevision = notificationAuditRevision,
+                    lifecycle = lifecycle,
                 )
             }
         }
@@ -174,6 +180,7 @@ private fun MnmAuSeekersApp(
     economicCalendarProvider: EconomicCalendarProvider,
     initialFeed: MarketDataFeed,
     notificationAuditRevision: Int,
+    lifecycle: Lifecycle,
 ) {
     val context = LocalContext.current
     var mode by rememberSaveable { mutableStateOf(TradingMode.PRIMARY) }
@@ -182,8 +189,20 @@ private fun MnmAuSeekersApp(
     var stopPoints by rememberSaveable { mutableStateOf("50") }
     var pointValue by rememberSaveable { mutableStateOf("0.10") }
     var pointSize by rememberSaveable { mutableStateOf("0.01") }
-    var refreshRequest by rememberSaveable { mutableIntStateOf(0) }
+    var marketRefreshRequest by rememberSaveable { mutableIntStateOf(0) }
+    var fullRefreshRequest by rememberSaveable { mutableIntStateOf(0) }
     var selectedSymbol by rememberSaveable { mutableStateOf(DEFAULT_SYMBOL) }
+    val liveAnalysisRefreshStore = remember(context) { LiveAnalysisRefreshStore(context) }
+    var liveAnalysisInterval by rememberSaveable {
+        mutableStateOf(
+            if (BuildConfig.MARKET_DATA_BASE_URL.isNotBlank()) {
+                liveAnalysisRefreshStore.current()
+            } else {
+                LiveAnalysisInterval.MANUAL
+            },
+        )
+    }
+    var lastMarketCheckedAt by remember { mutableStateOf<Instant?>(null) }
     var notificationInterval by rememberSaveable {
         mutableStateOf(SetupNotificationScheduler.currentInterval(context))
     }
@@ -226,6 +245,19 @@ private fun MnmAuSeekersApp(
     val notificationAudit = remember(validationRefreshRequest, notificationAuditRevision) {
         NotificationAuditRecorder(context).load()
     }
+    val lifecycleState by lifecycle.currentStateFlow.collectAsState()
+    val liveAnalysisActive = BuildConfig.MARKET_DATA_BASE_URL.isNotBlank() &&
+        liveAnalysisInterval.enabled &&
+        lifecycleState.isAtLeast(Lifecycle.State.STARTED)
+
+    LaunchedEffect(liveAnalysisInterval, lifecycleState) {
+        if (!liveAnalysisActive) return@LaunchedEffect
+        marketRefreshRequest += 1
+        while (true) {
+            delay(liveAnalysisInterval.seconds * 1_000)
+            marketRefreshRequest += 1
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -247,7 +279,7 @@ private fun MnmAuSeekersApp(
     val symbols by produceState(
         initialValue = listOf(DEFAULT_SYMBOL),
         marketDataProvider,
-        refreshRequest,
+        fullRefreshRequest,
     ) {
         value = marketDataProvider.watchlist().ifEmpty { listOf(DEFAULT_SYMBOL) }
     }
@@ -260,14 +292,22 @@ private fun MnmAuSeekersApp(
         initialValue = initialFeed,
         marketDataProvider,
         selectedSymbol,
-        refreshRequest,
+        marketRefreshRequest,
     ) {
+        val previous = value
         value = initialFeed.copy(
             symbol = selectedSymbol,
             state = FeedState.CONNECTING,
             statusMessage = "Loading $selectedSymbol from the configured data source…",
         )
-        value = marketDataProvider.latest(selectedSymbol)
+        val refreshed = marketDataProvider.latest(selectedSymbol)
+        val checkedAt = Instant.now()
+        value = LiveAnalysisFeedReducer().merge(
+            previous = previous,
+            refreshed = refreshed,
+            checkedAt = checkedAt,
+        )
+        lastMarketCheckedAt = checkedAt
     }
 
     val analysis = remember(mode, feed.snapshots) {
@@ -284,7 +324,7 @@ private fun MnmAuSeekersApp(
         ),
         economicCalendarProvider,
         selectedSymbol,
-        refreshRequest,
+        fullRefreshRequest,
     ) {
         val now = Instant.now()
         value = economicCalendarProvider.events(
@@ -299,7 +339,7 @@ private fun MnmAuSeekersApp(
     val preMarketWindow = remember(
         preMarketLeadTime,
         notificationPolicy.sessionFilter,
-        refreshRequest,
+        fullRefreshRequest,
         sessionClock,
     ) {
         PreMarketSessionPlanner().nextWindow(
@@ -350,6 +390,7 @@ private fun MnmAuSeekersApp(
             setupInterval = notificationInterval,
             preMarketLeadTime = preMarketLeadTime,
             notificationAudit = notificationAudit,
+            liveAnalysisInterval = liveAnalysisInterval,
             buildCommit = BuildConfig.BUILD_COMMIT_SHA,
             notificationPolicy = notificationPolicy,
         )
@@ -358,7 +399,7 @@ private fun MnmAuSeekersApp(
         initialValue = emptyList(),
         marketDataProvider,
         selectedSymbol,
-        refreshRequest,
+        fullRefreshRequest,
     ) {
         value = marketDataProvider.history(selectedSymbol, limit = 100)
     }
@@ -430,9 +471,24 @@ private fun MnmAuSeekersApp(
                 )
             }
             item {
+                LiveAnalysisSettings(
+                    selected = liveAnalysisInterval,
+                    liveServiceConfigured = BuildConfig.MARKET_DATA_BASE_URL.isNotBlank(),
+                    active = liveAnalysisActive,
+                    lastCheckedAt = lastMarketCheckedAt,
+                    onSelected = { interval ->
+                        liveAnalysisRefreshStore.set(interval)
+                        liveAnalysisInterval = interval
+                    },
+                )
+            }
+            item {
                 ConnectionBanner(
                     feed = feed,
-                    onRefresh = { refreshRequest += 1 },
+                    onRefresh = {
+                        marketRefreshRequest += 1
+                        fullRefreshRequest += 1
+                    },
                 )
             }
             item {
@@ -1064,6 +1120,48 @@ private fun HistoricalReplayCard(
 }
 
 @Composable
+private fun LiveAnalysisSettings(
+    selected: LiveAnalysisInterval,
+    liveServiceConfigured: Boolean,
+    active: Boolean,
+    lastCheckedAt: Instant?,
+    onSelected: (LiveAnalysisInterval) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ChoiceSection(
+            title = "Live analysis refresh",
+            options = LiveAnalysisInterval.entries,
+            selected = selected,
+            label = { it.label },
+            optionEnabled = { interval ->
+                interval == LiveAnalysisInterval.MANUAL || liveServiceConfigured
+            },
+            onSelected = onSelected,
+        )
+        val checked = lastCheckedAt?.let { LIVE_CHECK_TIME_FORMATTER.format(it) }
+        Text(
+            text = when {
+                !liveServiceConfigured ->
+                    "Configure a live-service URL at build time to enable foreground polling."
+                active ->
+                    "Foreground polling is active every ${selected.seconds} seconds. " +
+                        "Only the latest quote and M15/H1/H4 analysis are refreshed."
+                else ->
+                    "Manual mode is active. Refresh all also reloads the watchlist, calendar, " +
+                        "and stored history."
+            } + (checked?.let { " Last check $it." } ?: ""),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "Polling pauses outside the foreground and never sends an order.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
 private fun ConnectionBanner(
     feed: MarketDataFeed,
     onRefresh: () -> Unit,
@@ -1126,7 +1224,7 @@ private fun ConnectionBanner(
                 }
             }
             OutlinedButton(onClick = onRefresh) {
-                Text("Refresh")
+                Text("Refresh all")
             }
         }
     }
@@ -1726,6 +1824,10 @@ private val JOURNAL_TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter
 
 private val PRE_MARKET_TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter
     .ofPattern("EEE MMM d, HH:mm", Locale.US)
+    .withZone(ZoneId.systemDefault())
+
+private val LIVE_CHECK_TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter
+    .ofPattern("HH:mm:ss", Locale.US)
     .withZone(ZoneId.systemDefault())
 
 private fun String.numericInput(): String = filterIndexed { index, character ->

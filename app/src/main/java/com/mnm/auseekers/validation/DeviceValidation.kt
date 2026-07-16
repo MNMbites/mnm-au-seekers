@@ -5,6 +5,7 @@ import com.mnm.auseekers.analysis.EconomicCalendarRiskLevel
 import com.mnm.auseekers.analysis.MarketHealthAssessment
 import com.mnm.auseekers.analysis.MarketHealthLevel
 import com.mnm.auseekers.data.FeedState
+import com.mnm.auseekers.data.LiveAnalysisInterval
 import com.mnm.auseekers.data.MarketDataFeed
 import com.mnm.auseekers.domain.Timeframe
 import com.mnm.auseekers.notifications.NotificationInterval
@@ -112,6 +113,7 @@ class DeviceValidationEvaluator {
         setupInterval: NotificationInterval,
         preMarketLeadTime: PreMarketLeadTime,
         notificationAudit: List<NotificationAuditRecord>,
+        liveAnalysisInterval: LiveAnalysisInterval = LiveAnalysisInterval.MANUAL,
         buildCommit: String = "local",
         notificationPolicy: NotificationPolicy = NotificationPolicy(),
     ): DeviceValidationReport {
@@ -140,6 +142,21 @@ class DeviceValidationEvaluator {
                     },
                 ),
                 feedItem(feed),
+                ValidationItem(
+                    "Live analysis refresh",
+                    if (liveServiceConfigured && liveAnalysisInterval.enabled) {
+                        ValidationStatus.PASS
+                    } else {
+                        ValidationStatus.CHECK
+                    },
+                    if (liveServiceConfigured && liveAnalysisInterval.enabled) {
+                        "Foreground polling is set to every ${liveAnalysisInterval.seconds} seconds."
+                    } else if (liveServiceConfigured) {
+                        "Manual refresh is selected; choose a cadence for live polling evidence."
+                    } else {
+                        "Live polling is unavailable until a market-data service is configured."
+                    },
+                ),
                 ValidationItem(
                     "Required timeframes",
                     if (missing.isEmpty()) ValidationStatus.PASS else ValidationStatus.BLOCKED,
