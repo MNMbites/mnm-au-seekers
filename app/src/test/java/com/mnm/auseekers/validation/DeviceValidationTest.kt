@@ -5,6 +5,7 @@ import com.mnm.auseekers.analysis.EconomicCalendarRiskLevel
 import com.mnm.auseekers.analysis.MarketHealthAssessment
 import com.mnm.auseekers.analysis.MarketHealthLevel
 import com.mnm.auseekers.data.FeedState
+import com.mnm.auseekers.data.LiveAnalysisInterval
 import com.mnm.auseekers.data.MarketDataFeed
 import com.mnm.auseekers.domain.DemoMarket
 import com.mnm.auseekers.notifications.NotificationInterval
@@ -22,7 +23,7 @@ class DeviceValidationTest {
     fun liveConfiguredInstallationPassesCoreDeviceChecks() {
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.13.0",
+            appVersion = "0.14.0",
             liveServiceConfigured = true,
             feed = liveFeed(),
             marketHealth = health(MarketHealthLevel.READY),
@@ -31,11 +32,12 @@ class DeviceValidationTest {
             setupInterval = NotificationInterval.THIRTY_MINUTES,
             preMarketLeadTime = PreMarketLeadTime.SIXTY_MINUTES,
             notificationAudit = listOf(audit()),
+            liveAnalysisInterval = LiveAnalysisInterval.FIFTEEN_SECONDS,
             buildCommit = BUILD_COMMIT,
         )
 
         assertEquals(BUILD_COMMIT, report.buildCommit)
-        assertEquals(11, report.passCount)
+        assertEquals(12, report.passCount)
         assertEquals(0, report.checkCount)
         assertEquals(0, report.blockedCount)
     }
@@ -44,7 +46,7 @@ class DeviceValidationTest {
     fun demoInstallationIsExplicitlyBlockedAndSchedulesRemainOptional() {
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.13.0",
+            appVersion = "0.14.0",
             liveServiceConfigured = false,
             feed = MarketDataFeed(
                 symbol = "XAUUSD",
@@ -62,7 +64,7 @@ class DeviceValidationTest {
         )
 
         assertEquals(4, report.blockedCount)
-        assertEquals(5, report.checkCount)
+        assertEquals(6, report.checkCount)
         assertEquals(2, report.passCount)
         assertTrue(report.items.any {
             it.label == "MT5 feed state" && it.status == ValidationStatus.BLOCKED
@@ -76,7 +78,7 @@ class DeviceValidationTest {
         }
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.13.0",
+            appVersion = "0.14.0",
             liveServiceConfigured = true,
             feed = liveFeed(),
             marketHealth = health(MarketHealthLevel.READY),
@@ -96,7 +98,7 @@ class DeviceValidationTest {
     fun exportIsRedactedAndExplainsPublicationEvidence() {
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.13.0",
+            appVersion = "0.14.0",
             liveServiceConfigured = true,
             feed = liveFeed().copy(statusMessage = "https://secret.example token=do-not-export"),
             marketHealth = health(MarketHealthLevel.READY),
@@ -125,7 +127,7 @@ class DeviceValidationTest {
     fun publicationWithoutAlertOpenRemainsCheckEvidence() {
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.13.0",
+            appVersion = "0.14.0",
             liveServiceConfigured = true,
             feed = liveFeed(),
             marketHealth = health(MarketHealthLevel.READY),

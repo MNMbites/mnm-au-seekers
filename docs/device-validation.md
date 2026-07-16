@@ -52,6 +52,7 @@ The card evaluates the current installation and selected symbol for:
 
 - a configured market-data service;
 - a backend-validated live MT5 bridge snapshot;
+- the selected foreground live-analysis refresh cadence;
 - the required M15, H1, and H4 indicator snapshots;
 - current market-readiness status and score;
 - economic-calendar availability;
@@ -96,8 +97,9 @@ time.
 
 1. Build the app with the HTTPS market-data service origin and connect that
    service to the read-only EA on an MT5 demo terminal.
-2. Select XAU/USD and refresh until the feed is `Live`, all three timeframes are
-   present, and snapshot age remains within the configured freshness boundary.
+2. Select XAU/USD, choose the intended live-analysis refresh interval, and wait
+   until the feed is `Live`, all three timeframes are present, and snapshot age
+   remains within the configured freshness boundary.
 3. Enable the desired setup interval and a 30- or 60-minute pre-market window.
 4. Leave the device under the intended battery and network conditions through a
    London or New York briefing window.
@@ -108,6 +110,10 @@ time.
 7. Repeat with battery optimization and background restrictions documented for
    the test device. Keep late or missing operating-system delivery distinct from
    an app publication record.
+
+Foreground analysis polling pauses when the app is not visible. It is separate
+from WorkManager notification schedules and must not be used as evidence that a
+background alert ran at the same cadence.
 
 ## Redaction and safety boundary
 
