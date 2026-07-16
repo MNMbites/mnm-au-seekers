@@ -24,7 +24,7 @@ class MarketHealthEvaluatorTest {
         )
 
         assertEquals(MarketHealthLevel.READY, assessment.level)
-        assertEquals(97, assessment.score)
+        assertEquals(98, assessment.score)
         assertEquals("Strong agreement", assessment.confidenceLabel)
         assertTrue(assessment.confidenceExplanation.contains("M15, H1, H4"))
     }

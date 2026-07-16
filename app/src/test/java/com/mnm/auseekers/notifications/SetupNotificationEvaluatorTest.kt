@@ -237,7 +237,7 @@ class SetupNotificationEvaluatorTest {
         previousMa21 = 102.0,
         previousMa63 = 102.0,
         previousMa84 = 102.0,
-        previousBbUpper = 109.0,
-        previousBbLower = 99.0,
+        previousBbUpper = 110.0,
+        previousBbLower = 100.0,
     )
 }
