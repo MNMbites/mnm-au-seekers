@@ -55,6 +55,11 @@ Notification evaluation uses only the public read endpoints. The Android app
 does not receive the bridge token, watchlist admin token, MT5 credentials,
 account data, or any execution capability.
 
+Setup alerts can be filtered by minimum market readiness and setup stage. A
+shared device-local quiet-hours policy can suppress both setup alerts and
+pre-market briefings. See [notification-filters.md](notification-filters.md) for
+defaults, session selection, and boundary behavior.
+
 Pre-market briefings use a separate opt-in schedule described in
 [pre-market-briefings.md](pre-market-briefings.md). They share Android's
 notification permission but have their own WorkManager task, channel, settings,

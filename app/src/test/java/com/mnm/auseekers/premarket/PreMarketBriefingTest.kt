@@ -79,6 +79,19 @@ class PreMarketBriefingTest {
     }
 
     @Test
+    fun sessionFilterSelectsTheNextAllowedMarket() {
+        val next = planner.nextWindow(
+            Instant.parse("2026-07-16T06:30:00Z"),
+            PreMarketLeadTime.SIXTY_MINUTES,
+            setOf(MarketSession.NEW_YORK),
+        )
+
+        requireNotNull(next)
+        assertEquals(MarketSession.NEW_YORK, next.session)
+        assertEquals(Instant.parse("2026-07-16T12:00:00Z"), next.opensAt)
+    }
+
+    @Test
     fun briefingIncludesLevelsSafeRiskAndAlternativeWait() {
         val analysis = SignalEngine().analyse(DemoMarket.snapshots, TradingMode.PRIMARY)
         val window = requireNotNull(

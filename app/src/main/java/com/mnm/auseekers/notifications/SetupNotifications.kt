@@ -20,7 +20,6 @@ import androidx.work.WorkManager
 import com.mnm.auseekers.MainActivity
 import com.mnm.auseekers.R
 import com.mnm.auseekers.analysis.MarketHealthEvaluator
-import com.mnm.auseekers.analysis.MarketHealthLevel
 import com.mnm.auseekers.analysis.EconomicCalendarAssessment
 import com.mnm.auseekers.analysis.EconomicCalendarRiskLevel
 import com.mnm.auseekers.data.FeedState
@@ -59,6 +58,7 @@ class SetupNotificationEvaluator(
         feed: MarketDataFeed,
         calendarAssessment: EconomicCalendarAssessment? = null,
         calendarPolicy: EconomicCalendarPolicy = EconomicCalendarPolicy.WARN_ONLY,
+        notificationPolicy: NotificationPolicy = NotificationPolicy(),
     ): SetupNotification? {
         if (feed.state != FeedState.LIVE) return null
         if (calendarAssessment?.suppresses(calendarPolicy) == true) return null
@@ -68,7 +68,8 @@ class SetupNotificationEvaluator(
             return null
         }
         val marketHealth = marketHealthEvaluator.evaluate(feed, analysis)
-        if (marketHealth.level == MarketHealthLevel.NOT_READY) return null
+        if (!notificationPolicy.allowsMarketHealth(marketHealth.level)) return null
+        if (!notificationPolicy.allowsSetupStage(analysis.stage)) return null
 
         val calendarWarning = if (
             calendarAssessment?.level == EconomicCalendarRiskLevel.HIGH_IMPACT
