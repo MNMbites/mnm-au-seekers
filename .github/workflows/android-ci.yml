@@ -13,6 +13,9 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      MNM_BUILD_COMMIT_SHA: ${{ github.sha }}
+      MNM_MARKET_DATA_BASE_URL: ${{ vars.MNM_MARKET_DATA_BASE_URL }}
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -30,6 +33,20 @@ jobs:
 
       - name: Test, lint, and assemble debug APK
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
+
+      - name: Generate debug APK checksum
+        working-directory: app/build/outputs/apk/debug
+        run: sha256sum app-debug.apk > app-debug.apk.sha256
+
+      - name: Upload traceable debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mnm-au-seekers-debug-${{ github.run_number }}
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/debug/app-debug.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
 
   backend:
     runs-on: ubuntu-latest

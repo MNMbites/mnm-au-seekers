@@ -9,6 +9,11 @@ val marketDataBaseUrl = providers
     .orElse("")
     .get()
 
+val buildCommitSha = providers
+    .environmentVariable("MNM_BUILD_COMMIT_SHA")
+    .orElse("local")
+    .get()
+
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
@@ -20,14 +25,19 @@ android {
         applicationId = "com.mnm.auseekers"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.11.0"
+        versionCode = 12
+        versionName = "0.12.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField(
             "String",
             "MARKET_DATA_BASE_URL",
             marketDataBaseUrl.asBuildConfigString(),
+        )
+        buildConfigField(
+            "String",
+            "BUILD_COMMIT_SHA",
+            buildCommitSha.asBuildConfigString(),
         )
     }
 

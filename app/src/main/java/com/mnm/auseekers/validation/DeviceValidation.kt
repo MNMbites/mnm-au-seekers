@@ -13,6 +13,7 @@ import com.mnm.auseekers.premarket.PreMarketLeadTime
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 enum class ValidationStatus(val label: String) {
     PASS("Pass"),
@@ -42,6 +43,7 @@ data class NotificationAuditRecord(
 data class DeviceValidationReport(
     val generatedAtEpochMillis: Long,
     val appVersion: String,
+    val buildCommit: String,
     val symbol: String,
     val feedCapturedAtEpochMillis: Long?,
     val feedAgeSeconds: Int?,
@@ -65,6 +67,7 @@ class DeviceValidationEvaluator {
         setupInterval: NotificationInterval,
         preMarketLeadTime: PreMarketLeadTime,
         notificationAudit: List<NotificationAuditRecord>,
+        buildCommit: String = "local",
         notificationPolicy: NotificationPolicy = NotificationPolicy(),
     ): DeviceValidationReport {
         val timeframes = feed.snapshots.map { it.timeframe }.toSet()
@@ -77,6 +80,7 @@ class DeviceValidationEvaluator {
         return DeviceValidationReport(
             generatedAtEpochMillis = generatedAtEpochMillis,
             appVersion = appVersion,
+            buildCommit = buildCommit.normalizedBuildCommit(),
             symbol = feed.symbol,
             feedCapturedAtEpochMillis = feed.capturedAt?.toEpochMilli(),
             feedAgeSeconds = feed.ageSeconds,
@@ -181,8 +185,14 @@ class DeviceValidationEvaluator {
         if (enabled) "$value is selected." else "Off; enable only when timing validation is planned.",
     )
 
+    private fun String.normalizedBuildCommit(): String {
+        val normalized = trim().lowercase(Locale.US)
+        return normalized.takeIf { BUILD_COMMIT_PATTERN.matches(it) } ?: "local"
+    }
+
     private companion object {
         const val MAX_AUDIT_RECORDS = 20
+        val BUILD_COMMIT_PATTERN = Regex("^[0-9a-f]{7,40}$")
     }
 }
 
@@ -191,6 +201,7 @@ class DeviceValidationReportExporter {
         appendLine("MNM AU Seekers device validation report")
         appendLine("Generated: ${report.generatedAtEpochMillis.utcTime()}")
         appendLine("App version: ${report.appVersion}")
+        appendLine("Build commit: ${report.buildCommit}")
         appendLine("Symbol: ${report.symbol}")
         appendLine("Feed captured: ${report.feedCapturedAtEpochMillis?.utcTime() ?: "Unavailable"}")
         appendLine("Feed age: ${report.feedAgeSeconds?.let { "$it seconds" } ?: "Unavailable"}")

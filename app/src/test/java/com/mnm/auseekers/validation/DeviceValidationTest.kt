@@ -22,7 +22,7 @@ class DeviceValidationTest {
     fun liveConfiguredInstallationPassesCoreDeviceChecks() {
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.11.0",
+            appVersion = "0.12.0",
             liveServiceConfigured = true,
             feed = liveFeed(),
             marketHealth = health(MarketHealthLevel.READY),
@@ -31,8 +31,10 @@ class DeviceValidationTest {
             setupInterval = NotificationInterval.THIRTY_MINUTES,
             preMarketLeadTime = PreMarketLeadTime.SIXTY_MINUTES,
             notificationAudit = listOf(audit()),
+            buildCommit = BUILD_COMMIT,
         )
 
+        assertEquals(BUILD_COMMIT, report.buildCommit)
         assertEquals(10, report.passCount)
         assertEquals(0, report.checkCount)
         assertEquals(0, report.blockedCount)
@@ -42,7 +44,7 @@ class DeviceValidationTest {
     fun demoInstallationIsExplicitlyBlockedAndSchedulesRemainOptional() {
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.11.0",
+            appVersion = "0.12.0",
             liveServiceConfigured = false,
             feed = MarketDataFeed(
                 symbol = "XAUUSD",
@@ -74,7 +76,7 @@ class DeviceValidationTest {
         }
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.11.0",
+            appVersion = "0.12.0",
             liveServiceConfigured = true,
             feed = liveFeed(),
             marketHealth = health(MarketHealthLevel.READY),
@@ -94,7 +96,7 @@ class DeviceValidationTest {
     fun exportIsRedactedAndExplainsPublicationEvidence() {
         val report = evaluator.evaluate(
             generatedAtEpochMillis = NOW,
-            appVersion = "0.11.0",
+            appVersion = "0.12.0",
             liveServiceConfigured = true,
             feed = liveFeed().copy(statusMessage = "https://secret.example token=do-not-export"),
             marketHealth = health(MarketHealthLevel.READY),
@@ -103,6 +105,7 @@ class DeviceValidationTest {
             setupInterval = NotificationInterval.THIRTY_MINUTES,
             preMarketLeadTime = PreMarketLeadTime.SIXTY_MINUTES,
             notificationAudit = listOf(audit()),
+            buildCommit = "https://secret.example/do-not-export",
         )
 
         val exported = DeviceValidationReportExporter().export(report)
@@ -110,6 +113,7 @@ class DeviceValidationTest {
         assertTrue(exported.contains("[PASS] MT5 feed state"))
         assertTrue(exported.contains("Android accepted the notification request"))
         assertTrue(exported.contains("no service endpoint, token, device identifier"))
+        assertTrue(exported.contains("Build commit: local"))
         assertFalse(exported.contains("secret.example"))
         assertFalse(exported.contains("do-not-export"))
     }
@@ -149,5 +153,6 @@ class DeviceValidationTest {
 
     private companion object {
         val NOW: Long = Instant.parse("2026-07-16T06:30:00Z").toEpochMilli()
+        const val BUILD_COMMIT = "ad65415877cf9f07b0272dd23f52f223e93d489b"
     }
 }
