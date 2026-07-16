@@ -4,6 +4,7 @@ services:
     runtime: docker
     plan: free
     region: singapore
+    branch: codex/indicator-trend-direction
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /health
