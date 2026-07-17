@@ -1,0 +1,16 @@
+.git
+.github
+.gradle
+.idea
+.kotlin
+.pytest_cache
+.venv
+**/__pycache__
+**/*.pyc
+**/build
+apk-preview-*
+app
+docs
+mt5_bridge
+*.apk
+*.zip

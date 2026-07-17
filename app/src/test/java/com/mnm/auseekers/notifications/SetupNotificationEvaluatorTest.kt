@@ -169,6 +169,13 @@ class SetupNotificationEvaluatorTest {
         bbLower = 100.0,
         rsi = 62.0,
         macdHistogram = 1.0,
+        previousEma5 = 106.0,
+        previousMa9 = 105.0,
+        previousMa21 = 104.0,
+        previousMa63 = 103.0,
+        previousMa84 = 102.0,
+        previousBbUpper = 109.0,
+        previousBbLower = 99.0,
     )
 
     private fun bearish(timeframe: Timeframe) = MarketSnapshot(
@@ -183,6 +190,13 @@ class SetupNotificationEvaluatorTest {
         bbLower = 100.0,
         rsi = 38.0,
         macdHistogram = -1.0,
+        previousEma5 = 104.0,
+        previousMa9 = 105.0,
+        previousMa21 = 106.0,
+        previousMa63 = 107.0,
+        previousMa84 = 108.0,
+        previousBbUpper = 111.0,
+        previousBbLower = 101.0,
     )
 
     private fun neutral(timeframe: Timeframe) = MarketSnapshot(
@@ -197,6 +211,13 @@ class SetupNotificationEvaluatorTest {
         bbLower = 100.0,
         rsi = 50.0,
         macdHistogram = 0.0,
+        previousEma5 = 105.0,
+        previousMa9 = 105.0,
+        previousMa21 = 105.0,
+        previousMa63 = 105.0,
+        previousMa84 = 105.0,
+        previousBbUpper = 110.0,
+        previousBbLower = 100.0,
     )
 
     private fun weakBullish(timeframe: Timeframe) = MarketSnapshot(
@@ -211,5 +232,12 @@ class SetupNotificationEvaluatorTest {
         bbLower = 100.0,
         rsi = 50.0,
         macdHistogram = 0.0,
+        previousEma5 = 104.0,
+        previousMa9 = 103.0,
+        previousMa21 = 102.0,
+        previousMa63 = 102.0,
+        previousMa84 = 102.0,
+        previousBbUpper = 110.0,
+        previousBbLower = 100.0,
     )
 }

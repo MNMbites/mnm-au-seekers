@@ -112,7 +112,33 @@ class MarketDataJsonParser {
         bbLower = requiredDouble("bb_lower"),
         rsi = requiredDouble("rsi"),
         macdHistogram = requiredDouble("macd_histogram"),
-    )
+        previousEma5 = optionalDouble("previous_ema5"),
+        previousMa9 = optionalDouble("previous_ma9"),
+        previousMa21 = optionalDouble("previous_ma21"),
+        previousMa63 = optionalDouble("previous_ma63"),
+        previousMa84 = optionalDouble("previous_ma84"),
+        previousBbUpper = optionalDouble("previous_bb_upper"),
+        previousBbLower = optionalDouble("previous_bb_lower"),
+    ).also { snapshot ->
+        val previousValues = listOf(
+            snapshot.previousEma5,
+            snapshot.previousMa9,
+            snapshot.previousMa21,
+            snapshot.previousMa63,
+            snapshot.previousMa84,
+            snapshot.previousBbUpper,
+            snapshot.previousBbLower,
+        )
+        require(previousValues.all { it == null } || previousValues.all { it != null }) {
+            "Previous indicator values must be supplied together"
+        }
+        require(
+            snapshot.previousBbLower == null ||
+                snapshot.previousBbLower <= requireNotNull(snapshot.previousBbUpper),
+        ) {
+            "Previous Bollinger lower band must not exceed the upper band"
+        }
+    }
 
     private fun String.toFeedState(): FeedState = when (this) {
         "LIVE" -> FeedState.LIVE
@@ -147,6 +173,13 @@ private fun JsonObject.requiredDouble(name: String): Double =
     get(name)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asDouble
         ?.takeIf(Double::isFinite)
         ?: throw IllegalArgumentException("Missing or invalid $name")
+
+private fun JsonObject.optionalDouble(name: String): Double? =
+    get(name)?.takeUnless { it.isJsonNull }?.let { value ->
+        value.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asDouble
+            ?.takeIf { it.isFinite() && it > 0.0 }
+            ?: throw IllegalArgumentException("Invalid $name")
+    }
 
 private fun JsonObject.requiredInt(name: String): Int =
     get(name)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asInt

@@ -15,6 +15,8 @@ class SignalEngine {
                 direction = Direction.WAIT,
                 strength = 0,
                 score = 0,
+                maTrend = TrendDirection.UNAVAILABLE,
+                bollingerTrend = TrendDirection.UNAVAILABLE,
             )
         }
 
@@ -25,6 +27,8 @@ class SignalEngine {
     }
 
     private fun score(snapshot: MarketSnapshot): TimeframeSignal {
+        val maTrend = movingAverageTrend(snapshot)
+        val bollingerTrend = bollingerBandTrend(snapshot)
         var score = 0
         score += comparison(snapshot.close, snapshot.ema5)
         score += comparison(snapshot.ema5, snapshot.ma9)
@@ -36,6 +40,8 @@ class SignalEngine {
             snapshot.rsi <= 45.0 -> -1
             else -> 0
         }
+        score += maTrend.sign * TREND_WEIGHT
+        score += bollingerTrend.sign * TREND_WEIGHT
         score += comparison(snapshot.macdHistogram, 0.0)
         score += when {
             snapshot.close > snapshot.bbUpper -> 1
@@ -53,7 +59,50 @@ class SignalEngine {
             direction = direction,
             strength = (abs(score) * 100.0 / MAX_SCORE).roundToInt(),
             score = score,
+            maTrend = maTrend,
+            bollingerTrend = bollingerTrend,
         )
+    }
+
+    private fun movingAverageTrend(snapshot: MarketSnapshot): TrendDirection = aggregateTrend(
+        listOfNotNull(
+            slope(snapshot.ema5, snapshot.previousEma5),
+            slope(snapshot.ma9, snapshot.previousMa9),
+            slope(snapshot.ma21, snapshot.previousMa21),
+            slope(snapshot.ma63, snapshot.previousMa63),
+            slope(snapshot.ma84, snapshot.previousMa84),
+        ),
+        requiredValues = 5,
+        directionalVotes = 3,
+    )
+
+    private fun bollingerBandTrend(snapshot: MarketSnapshot): TrendDirection = aggregateTrend(
+        listOfNotNull(
+            slope(snapshot.bbUpper, snapshot.previousBbUpper),
+            slope(snapshot.ma21, snapshot.previousMa21),
+            slope(snapshot.bbLower, snapshot.previousBbLower),
+        ),
+        requiredValues = 3,
+        directionalVotes = 2,
+    )
+
+    private fun slope(current: Double, previous: Double?): Int? = previous?.let {
+        comparison(current, it)
+    }
+
+    private fun aggregateTrend(
+        slopes: List<Int>,
+        requiredValues: Int,
+        directionalVotes: Int,
+    ): TrendDirection {
+        if (slopes.size != requiredValues) return TrendDirection.UNAVAILABLE
+        val rising = slopes.count { it > 0 }
+        val falling = slopes.count { it < 0 }
+        return when {
+            rising >= directionalVotes && rising > falling -> TrendDirection.RISING
+            falling >= directionalVotes && falling > rising -> TrendDirection.FALLING
+            else -> TrendDirection.FLAT
+        }
     }
 
     private fun analysePrimary(signals: List<TimeframeSignal>): MarketAnalysis {
@@ -136,7 +185,8 @@ class SignalEngine {
         first { it.timeframe == timeframe }
 
     private companion object {
-        const val SIGNAL_THRESHOLD = 3
-        const val MAX_SCORE = 8
+        const val SIGNAL_THRESHOLD = 5
+        const val MAX_SCORE = 12
+        const val TREND_WEIGHT = 2
     }
 }

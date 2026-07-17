@@ -10,7 +10,8 @@ backends.
 
 - Primary mode for M15/H1/H4 trend alignment
 - Optional Scalping mode with an H1 trend guard
-- EMA 5, MA 9/21/63/84, Bollinger Bands 21/2, RSI, and MACD inputs
+- EMA 5, MA 9/21/63/84, Bollinger Bands 21/2, RSI, and MACD inputs,
+  including completed-bar MA and band direction
 - Safe, Semi-aggressive, and Aggressive risk profiles
 - A small-account guard that refuses a trade when the broker's minimum lot
   would exceed the selected risk, including balances around USD 15
@@ -84,6 +85,8 @@ python -m pytest
 
 See [docs/mt5-bridge.md](docs/mt5-bridge.md) for backend and MT5 EA setup, and
 [docs/android-live-data.md](docs/android-live-data.md) for Android connectivity.
+For a containerized HTTPS backend and the live-enabled APK handoff, see
+[docs/live-deployment.md](docs/live-deployment.md).
 For production persistence and watchlist administration, see
 [docs/postgresql.md](docs/postgresql.md). Multi-symbol Android and notification
 behavior is documented in
@@ -105,6 +108,8 @@ Optional alert categories and filters are documented in
 [docs/notification-filters.md](docs/notification-filters.md).
 Sideloaded APK update checks, signing-key custody, and tagged release publishing
 are documented in [docs/app-updates.md](docs/app-updates.md).
+MA and Bollinger direction scoring is specified in
+[docs/indicator-trends.md](docs/indicator-trends.md).
 
 ## Roadmap
 

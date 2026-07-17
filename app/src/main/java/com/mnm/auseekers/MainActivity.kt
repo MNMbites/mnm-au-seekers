@@ -1566,20 +1566,29 @@ private fun AnalysisCard(analysis: MarketAnalysis) {
 @Composable
 private fun TimeframeCard(signal: TimeframeSignal) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(signal.timeframe.label, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(signal.timeframe.label, fontWeight = FontWeight.Bold)
+                Text(
+                    signal.direction.label,
+                    color = directionColor(signal.direction),
+                    fontWeight = FontWeight.Bold,
+                )
+                Text("${signal.strength}%", style = MaterialTheme.typography.bodyMedium)
+            }
             Text(
-                signal.direction.label,
-                color = directionColor(signal.direction),
-                fontWeight = FontWeight.Bold,
+                "MA ${signal.maTrend.label} • BB ${signal.bollingerTrend.label}",
+                style = MaterialTheme.typography.labelMedium,
             )
-            Text("${signal.strength}%", style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

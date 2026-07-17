@@ -4,7 +4,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val appVersionName = "0.15.0"
+val appVersionName = "0.16.0"
 val appVersionParts = appVersionName.split('.').map(String::toInt)
 require(appVersionParts.size == 3 && appVersionParts.all { it in 0..999 }) {
     "App version must use MAJOR.MINOR.PATCH with components from 0 to 999."

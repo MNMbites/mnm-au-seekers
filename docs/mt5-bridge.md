@@ -8,7 +8,9 @@ position, account-balance, login, or password capability.
 
 1. `MnmAuSeekersBridge.mq5` reads the current bid/ask and M15, H1, and H4 data.
 2. The EA calculates EMA 5, MA 9/21/63/84, Bollinger Bands 21/2, RSI 14, and
-   MACD 12/26/9 values from the current symbol.
+   MACD 12/26/9 values from the current symbol. It also exports the immediately
+   preceding completed-bar MA and Bollinger values so clients can derive slope
+   direction without inferring it from separate HTTP refreshes.
 3. Every 30 seconds, it posts a schema `1.0` snapshot to the backend with an
    `X-Bridge-Token` header.
 4. The backend validates each snapshot and stores it in memory or configured

@@ -56,6 +56,13 @@ def indicators(timeframe: str, close: float) -> dict[str, object]:
         "ma84": close - 1.50,
         "bb_upper": close + 4.00,
         "bb_lower": close - 4.00,
+        "previous_ema5": close - 0.40,
+        "previous_ma9": close - 0.60,
+        "previous_ma21": close - 1.00,
+        "previous_ma63": close - 1.40,
+        "previous_ma84": close - 1.70,
+        "previous_bb_upper": close + 3.80,
+        "previous_bb_lower": close - 4.20,
         "rsi": 58.0,
         "macd_histogram": 0.42,
     }
@@ -92,6 +99,19 @@ def test_ingestion_rejects_invalid_token() -> None:
     )
 
     assert response.status_code == 401
+
+
+def test_ingestion_rejects_partial_previous_indicator_values() -> None:
+    payload = snapshot_payload()
+    del payload["timeframes"][0]["previous_bb_lower"]
+
+    response = make_client().post(
+        "/api/v1/market-data/mt5/snapshots",
+        json=payload,
+        headers={"X-Bridge-Token": "test-bridge-token"},
+    )
+
+    assert response.status_code == 422
 
 
 def test_ingests_and_returns_latest_snapshot() -> None:

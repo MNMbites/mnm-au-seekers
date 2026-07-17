@@ -1,5 +1,5 @@
 #property strict
-#property version   "0.20"
+#property version   "0.30"
 #property description "Read-only MNM AU Seekers quote and indicator bridge"
 
 input string InpEndpoint = "http://127.0.0.1:8000/api/v1/market-data/mt5/snapshots";
@@ -127,6 +127,13 @@ bool BuildTimeframeJson(
    double ma84;
    double bbUpper;
    double bbLower;
+   double previousEma5;
+   double previousMa9;
+   double previousMa21;
+   double previousMa63;
+   double previousMa84;
+   double previousBbUpper;
+   double previousBbLower;
    double rsi;
    double macdHistogram;
 
@@ -137,6 +144,17 @@ bool BuildTimeframeJson(
       || !ReadMovingAverage(timeframe, 63, MODE_SMA, shift, ma63)
       || !ReadMovingAverage(timeframe, 84, MODE_SMA, shift, ma84)
       || !ReadBollingerBands(timeframe, shift, bbUpper, bbLower)
+      || !ReadMovingAverage(timeframe, 5, MODE_EMA, shift + 1, previousEma5)
+      || !ReadMovingAverage(timeframe, 9, MODE_SMA, shift + 1, previousMa9)
+      || !ReadMovingAverage(timeframe, 21, MODE_SMA, shift + 1, previousMa21)
+      || !ReadMovingAverage(timeframe, 63, MODE_SMA, shift + 1, previousMa63)
+      || !ReadMovingAverage(timeframe, 84, MODE_SMA, shift + 1, previousMa84)
+      || !ReadBollingerBands(
+         timeframe,
+         shift + 1,
+         previousBbUpper,
+         previousBbLower
+      )
       || !ReadRsi(timeframe, shift, rsi)
       || !ReadMacdHistogram(timeframe, shift, macdHistogram))
    {
@@ -153,6 +171,13 @@ bool BuildTimeframeJson(
       + "\"ma84\":" + Number(ma84, _Digits) + ","
       + "\"bb_upper\":" + Number(bbUpper, _Digits) + ","
       + "\"bb_lower\":" + Number(bbLower, _Digits) + ","
+      + "\"previous_ema5\":" + Number(previousEma5, _Digits) + ","
+      + "\"previous_ma9\":" + Number(previousMa9, _Digits) + ","
+      + "\"previous_ma21\":" + Number(previousMa21, _Digits) + ","
+      + "\"previous_ma63\":" + Number(previousMa63, _Digits) + ","
+      + "\"previous_ma84\":" + Number(previousMa84, _Digits) + ","
+      + "\"previous_bb_upper\":" + Number(previousBbUpper, _Digits) + ","
+      + "\"previous_bb_lower\":" + Number(previousBbLower, _Digits) + ","
       + "\"rsi\":" + Number(rsi, 4) + ","
       + "\"macd_histogram\":" + Number(macdHistogram, 8)
       + "}";

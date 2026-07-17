@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: mnm-au-seekers-api
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: codex/indicator-trend-direction
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: MT5_BRIDGE_TOKEN
+        sync: false
+      - key: MARKET_DATA_MAX_AGE_SECONDS
+        value: "120"
