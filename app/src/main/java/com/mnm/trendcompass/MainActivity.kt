@@ -54,6 +54,7 @@ fun TrendCompassApp() {
             ) {
                 Header(overallDirection, kotlin.math.abs(overall).toInt())
                 TimeframeTabs(selected) { selected = it }
+                ExecutiveSummaryCard(active)
                 PriceChart(active)
                 IndicatorCard(active)
                 PreviousDayCard(active)
@@ -94,6 +95,27 @@ private fun TimeframeTabs(selected: Timeframe, onSelect: (Timeframe) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Timeframe.entries.forEach { tf ->
             FilterChip(selected = selected == tf, onClick = { onSelect(tf) }, label = { Text(tf.label) }, modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun ExecutiveSummaryCard(r: AnalysisResult) {
+    val summary = r.executiveSummary
+    val accent = when (r.direction) { Direction.BULLISH -> Bull; Direction.BEARISH -> Bear; Direction.NEUTRAL -> Gold }
+    Surface(color = accent.copy(alpha = .10f), shape = RoundedCornerShape(20.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("EXECUTIVE SUMMARY", color = SoftGold, fontWeight = FontWeight.Black)
+                Text("${summary.confidence}%", color = accent, fontWeight = FontWeight.Black)
+            }
+            Text(summary.headline, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            Text(summary.conclusion, color = Color.White.copy(alpha = .78f))
+            HorizontalDivider(color = Color.White.copy(alpha = .10f))
+            Text("Fact chain", color = SoftGold, fontWeight = FontWeight.SemiBold)
+            summary.facts.forEachIndexed { index, fact ->
+                Text("${index + 1}. $fact", color = Color.White.copy(alpha = .72f), style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }
@@ -156,11 +178,16 @@ private fun PriceChart(result: AnalysisResult) {
 }
 
 @Composable
-private fun IndicatorCard(r: AnalysisResult) = MetricPanel("Alignment components") {
+private fun IndicatorCard(r: AnalysisResult) = MetricPanel("Back-to-back evidence") {
     MetricRow("EMA 5", r.emaDirection.name)
     MetricRow("MA structure", r.maDirection.name)
     MetricRow("Bollinger direction", r.bbDirection.name)
-    MetricRow("Fibonacci fan", r.fanText)
+    MetricRow("Fan phase", r.fanText)
+    MetricRow("Retracement depth", "${r.fanSummary.retracementDepth}%")
+    MetricRow("Fan respect", "${r.fanSummary.respectScore}%")
+    MetricRow("Follow-through", "${r.fanSummary.followThroughScore}%")
+    MetricRow("Breakdown risk", "${r.fanSummary.breakdownRisk}%")
+    MetricRow("Current fan zone", r.fanSummary.currentZone)
     MetricRow("Timeframe score", "${r.score}% ${r.direction.name}")
 }
 
@@ -174,6 +201,9 @@ private fun PreviousDayCard(r: AnalysisResult) = MetricPanel("Previous-day compa
 
 @Composable
 private fun TargetCard(r: AnalysisResult) = MetricPanel("Forecast travel map") {
+    MetricRow("Fan support", r.fanSummary.nearestSupportRay.format())
+    MetricRow("Fan resistance", r.fanSummary.nearestResistanceRay.format())
+    MetricRow("Fan invalidation", r.fanSummary.invalidationPrice.format())
     r.targets.forEach { MetricRow(it.name, "${it.price.format()} • ${it.confidence}% reach grade") }
     MetricRow("Structural SL", r.stopLoss.format())
     Text("Forecast zones are analytical estimates, not guaranteed execution levels.", color = Color.White.copy(alpha = .55f), style = MaterialTheme.typography.bodySmall)
@@ -181,7 +211,7 @@ private fun TargetCard(r: AnalysisResult) = MetricPanel("Forecast travel map") {
 
 @Composable
 private fun TimeframeConsensus(results: Map<Timeframe, AnalysisResult>) = MetricPanel("Four-timeframe consensus") {
-    results.forEach { (tf, r) -> MetricRow(tf.label, "${r.direction.name} • ${r.score}% • weight ${(tf.weight * 100).toInt()}%") }
+    results.forEach { (tf, r) -> MetricRow(tf.label, "${r.direction.name} • ${r.fanSummary.phase.name.replace('_', ' ')} • ${r.score}%") }
 }
 
 @Composable
@@ -197,8 +227,8 @@ private fun MetricPanel(title: String, content: @Composable ColumnScope.() -> Un
 @Composable
 private fun MetricRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = Color.White.copy(alpha = .62f))
-        Text(value, color = Color.White, fontWeight = FontWeight.SemiBold)
+        Text(label, color = Color.White.copy(alpha = .62f), modifier = Modifier.weight(.45f))
+        Text(value, color = Color.White, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(.55f))
     }
 }
 
