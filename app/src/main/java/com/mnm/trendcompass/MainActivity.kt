@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.min
 
@@ -40,8 +42,14 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun TrendCompassApp(provider: MarketDataProvider = AppMarketData.provider) {
     var selected by remember { mutableStateOf(Timeframe.H4) }
-    val snapshots = remember(provider) {
-        Timeframe.entries.associateWith { provider.snapshot("XAUUSD", it) }
+    val demoProvider = remember { DemoMarketDataProvider() }
+    val initialSnapshots = remember {
+        Timeframe.entries.associateWith { demoProvider.snapshot("XAUUSD", it) }
+    }
+    val snapshots by produceState(initialValue = initialSnapshots, provider) {
+        value = withContext(Dispatchers.IO) {
+            Timeframe.entries.associateWith { provider.snapshot("XAUUSD", it) }
+        }
     }
     val results = remember(snapshots) {
         snapshots.mapValues { (_, snapshot) ->
