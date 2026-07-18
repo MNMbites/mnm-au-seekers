@@ -80,6 +80,33 @@ class AnalysisEngineTest {
     }
 
     @Test
+    fun fallingDollarAndYieldsSupportBullishGoldSummary() {
+        val summary = GoldMarketIntelligenceEngine.summarize(
+            listOf(
+                CrossMarketSignal(GoldMarketInstrument.SPOT_GOLD, Direction.BULLISH, 80),
+                CrossMarketSignal(GoldMarketInstrument.DXY, Direction.BEARISH, 75),
+                CrossMarketSignal(GoldMarketInstrument.US10Y, Direction.BEARISH, 65),
+                CrossMarketSignal(GoldMarketInstrument.GOLD_FUTURES, Direction.BULLISH, 78)
+            )
+        )
+        assertEquals(Direction.BULLISH, summary.direction)
+        assertTrue(summary.strength >= 70)
+        assertTrue(summary.macroSupport >= 60)
+    }
+
+    @Test
+    fun risingDollarAndYieldsCanCancelBullishSpotSignal() {
+        val summary = GoldMarketIntelligenceEngine.summarize(
+            listOf(
+                CrossMarketSignal(GoldMarketInstrument.SPOT_GOLD, Direction.BULLISH, 55),
+                CrossMarketSignal(GoldMarketInstrument.DXY, Direction.BULLISH, 90),
+                CrossMarketSignal(GoldMarketInstrument.US10Y, Direction.BULLISH, 80)
+            )
+        )
+        assertTrue(summary.direction != Direction.BULLISH)
+    }
+
+    @Test
     fun movingAveragesPreserveSeriesLength() {
         val values = (1..100).map(Int::toDouble)
         assertEquals(values.size, AnalysisEngine.sma(values, 21).size)
