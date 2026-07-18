@@ -14,7 +14,7 @@ class AnalysisEngineTest {
     }
 
     @Test
-    fun demoSeriesProducesTargetsAndStop() {
+    fun demoSeriesProducesTargetsStopAndFanSummary() {
         val result = AnalysisEngine.analyze(
             Timeframe.H4,
             DemoMarketData.candles(Timeframe.H4),
@@ -23,6 +23,24 @@ class AnalysisEngineTest {
         assertEquals(3, result.targets.size)
         assertTrue(result.score in 0..100)
         assertTrue(result.stopLoss.isFinite())
+        assertTrue(result.fanSummary.anchorQuality in 0..100)
+        assertTrue(result.fanSummary.retracementDepth >= 0)
+        assertTrue(result.fanSummary.followThroughScore in 0..100)
+        assertTrue(result.fanSummary.breakdownRisk in 0..100)
+    }
+
+    @Test
+    fun executiveSummaryContainsBackToBackFacts() {
+        val result = AnalysisEngine.analyze(
+            Timeframe.H1,
+            DemoMarketData.candles(Timeframe.H1),
+            PreviousDayCompass(3367.4, 3321.8)
+        )
+        assertTrue(result.executiveSummary.headline.isNotBlank())
+        assertTrue(result.executiveSummary.conclusion.isNotBlank())
+        assertTrue(result.executiveSummary.facts.size >= 5)
+        assertTrue(result.executiveSummary.facts.any { it.contains("Bollinger") })
+        assertTrue(result.executiveSummary.facts.any { it.contains("Fibonacci") })
     }
 
     @Test
