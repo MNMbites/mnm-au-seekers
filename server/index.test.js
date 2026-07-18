@@ -7,7 +7,6 @@ let baseUrl;
 
 before(async () => {
   process.env.NODE_ENV = 'test';
-  process.env.MARKET_DATA_MODE = 'synthetic-development';
   server = createServer();
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
@@ -18,32 +17,55 @@ after(async () => {
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 });
 
-test('health reports that live feed is not configured', async () => {
-  const response = await fetch(`${baseUrl}/health`);
-  assert.equal(response.status, 200);
-  const body = await response.json();
-  assert.equal(body.status, 'ok');
-  assert.equal(body.liveFeedConfigured, false);
-});
+function candles(count = 90) {
+  let price = 3300;
+  return Array.from({ length: count }, (_, index) => {
+    const open = price;
+    const close = open + 0.5;
+    const candle = {
+      time: 1_700_000_000_000 + index * 60_000,
+      open,
+      high: close + 0.4,
+      low: open - 0.4,
+      close
+    };
+    price = close;
+    return candle;
+  });
+}
 
-test('market-data refuses to label development candles as live', async () => {
-  const response = await fetch(`${baseUrl}/market-data?symbol=XAUUSD&timeframe=H4`);
+test('market-data refuses to claim live before history is ingested', async () => {
+  const response = await fetch(`${baseUrl}/market-data?symbol=XAUUSD&timeframe=H4&limit=160`);
   assert.equal(response.status, 503);
   const body = await response.json();
-  assert.equal(body.error, 'live_feed_not_configured');
+  assert.equal(body.error, 'insufficient_live_history');
+  assert.equal(body.required, 90);
 });
 
-test('sample route returns Android-compatible OHLC contract', async () => {
-  const response = await fetch(`${baseUrl}/sample-market-data?symbol=XAUUSD&timeframe=H1&limit=100`);
+test('valid ingest unlocks truthful live market-data response', async () => {
+  const ingest = await fetch(`${baseUrl}/ingest`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ symbol: 'XAUUSD', timeframe: 'H4', candles: candles(90) })
+  });
+  assert.equal(ingest.status, 200);
+
+  const response = await fetch(`${baseUrl}/market-data?symbol=XAUUSD&timeframe=H4&limit=160`);
   assert.equal(response.status, 200);
   const body = await response.json();
-  assert.equal(body.symbol, 'XAUUSD');
-  assert.equal(body.timeframe, 'H1');
-  assert.equal(body.isLiveBrokerData, false);
-  assert.equal(body.candles.length, 100);
-  assert.ok(body.candles.every((candle) => candle.high >= Math.max(candle.open, candle.close)));
-  assert.ok(body.candles.every((candle) => candle.low <= Math.min(candle.open, candle.close)));
+  assert.equal(body.isLiveBrokerData, true);
+  assert.equal(body.source, 'mt5-ingested');
+  assert.equal(body.candles.length, 90);
   assert.ok(body.previousDay.high > body.previousDay.low);
+});
+
+test('sample endpoint remains explicitly synthetic', async () => {
+  const response = await fetch(`${baseUrl}/sample-market-data?symbol=XAUUSD&timeframe=M15&limit=90`);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.isLiveBrokerData, false);
+  assert.equal(body.source, 'synthetic-development');
+  assert.equal(body.candles.length, 90);
 });
 
 test('unsupported timeframe returns a clear contract error', async () => {
