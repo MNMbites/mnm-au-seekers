@@ -54,32 +54,61 @@ function previousDayFrom(candles) {
   };
 }
 
+function marketRequest(url) {
+  const symbol = (url.searchParams.get('symbol') || 'XAUUSD').toUpperCase();
+  const timeframe = (url.searchParams.get('timeframe') || 'H4').toUpperCase();
+  const limit = clampLimit(url.searchParams.get('limit'));
+  return { symbol, timeframe, limit };
+}
+
+function validateTimeframe(response, timeframe) {
+  if (SUPPORTED_TIMEFRAMES.has(timeframe)) return true;
+  json(response, 400, {
+    error: 'unsupported_timeframe',
+    supported: [...SUPPORTED_TIMEFRAMES.keys()]
+  });
+  return false;
+}
+
 export function createServer() {
   return http.createServer((request, response) => {
     const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+    const marketDataMode = process.env.MARKET_DATA_MODE || 'synthetic-development';
 
     if (request.method === 'GET' && url.pathname === '/health') {
       return json(response, 200, {
         status: 'ok',
         service: 'mnm-au-seekers-api',
         version: '0.1.0',
-        marketDataMode: process.env.MARKET_DATA_MODE || 'synthetic-development',
+        marketDataMode,
+        liveFeedConfigured: marketDataMode === 'live',
         updatedAt: Date.now()
       });
     }
 
     if (request.method === 'GET' && url.pathname === '/market-data') {
-      const symbol = (url.searchParams.get('symbol') || 'XAUUSD').toUpperCase();
-      const timeframe = (url.searchParams.get('timeframe') || 'H4').toUpperCase();
-      const limit = clampLimit(url.searchParams.get('limit'));
+      const { symbol, timeframe } = marketRequest(url);
+      if (!validateTimeframe(response, timeframe)) return;
 
-      if (!SUPPORTED_TIMEFRAMES.has(timeframe)) {
-        return json(response, 400, {
-          error: 'unsupported_timeframe',
-          supported: [...SUPPORTED_TIMEFRAMES.keys()]
+      if (marketDataMode !== 'live') {
+        return json(response, 503, {
+          error: 'live_feed_not_configured',
+          message: 'A licensed upstream market-data provider has not been configured.',
+          symbol,
+          timeframe,
+          sampleRoute: `/sample-market-data?symbol=${symbol}&timeframe=${timeframe}&limit=${DEFAULT_LIMIT}`
         });
       }
 
+      return json(response, 501, {
+        error: 'live_adapter_not_implemented',
+        message: 'Configure the licensed upstream adapter before enabling MARKET_DATA_MODE=live.'
+      });
+    }
+
+    if (request.method === 'GET' && url.pathname === '/sample-market-data') {
+      const { symbol, timeframe, limit } = marketRequest(url);
+      if (!validateTimeframe(response, timeframe)) return;
       const candles = syntheticCandles(timeframe, limit);
       return json(response, 200, {
         symbol,
@@ -94,7 +123,11 @@ export function createServer() {
 
     return json(response, 404, {
       error: 'not_found',
-      routes: ['/health', '/market-data?symbol=XAUUSD&timeframe=H4&limit=160']
+      routes: [
+        '/health',
+        '/market-data?symbol=XAUUSD&timeframe=H4&limit=160',
+        '/sample-market-data?symbol=XAUUSD&timeframe=H4&limit=160'
+      ]
     });
   });
 }
