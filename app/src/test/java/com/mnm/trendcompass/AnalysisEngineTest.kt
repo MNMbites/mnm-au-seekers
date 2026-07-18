@@ -1,8 +1,11 @@
 package com.mnm.trendcompass
 
+import org.json.JSONException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 
 class AnalysisEngineTest {
     @Test
@@ -63,6 +66,17 @@ class AnalysisEngineTest {
         assertEquals(MarketDataMode.FALLBACK, snapshot.mode)
         assertTrue(snapshot.note.orEmpty().contains("offline"))
         assertTrue(snapshot.candles.size >= 90)
+        assertEquals(FeedFailureType.UNKNOWN, snapshot.diagnostics?.failureType)
+    }
+
+    @Test
+    fun feedFailuresAreClassifiedForFieldDiagnostics() {
+        val provider = FallbackMarketDataProvider(DemoMarketDataProvider(), DemoMarketDataProvider())
+        assertEquals(FeedFailureType.DNS, provider.classifyFailure(UnknownHostException("host")))
+        assertEquals(FeedFailureType.TIMEOUT, provider.classifyFailure(SocketTimeoutException("slow")))
+        assertEquals(FeedFailureType.SCHEMA, provider.classifyFailure(JSONException("bad json")))
+        assertEquals(FeedFailureType.HTTP, provider.classifyFailure(IllegalArgumentException("HTTP 503")))
+        assertEquals(FeedFailureType.DATA, provider.classifyFailure(IllegalArgumentException("invalid OHLC candle")))
     }
 
     @Test
