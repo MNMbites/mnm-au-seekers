@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: mnm-au-seekers-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: MARKET_DATA_MODE
+        value: synthetic-development
