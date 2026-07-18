@@ -4,8 +4,20 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.UnknownHostException
+import javax.net.ssl.SSLException
+
 
 enum class MarketDataMode { LIVE, FALLBACK, DEMO }
+enum class FeedFailureType { DNS, TIMEOUT, HTTP, SSL, SCHEMA, DATA, UNKNOWN }
+
+data class FeedDiagnostics(
+    val endpoint: String,
+    val latencyMs: Long? = null,
+    val httpStatus: Int? = null,
+    val failureType: FeedFailureType? = null,
+    val message: String? = null
+)
 
 data class MarketSnapshot(
     val symbol: String,
@@ -15,7 +27,8 @@ data class MarketSnapshot(
     val mode: MarketDataMode,
     val providerName: String,
     val updatedAt: Long,
-    val note: String? = null
+    val note: String? = null,
+    val diagnostics: FeedDiagnostics? = null
 )
 
 interface MarketDataProvider {
@@ -58,6 +71,7 @@ class RenderMarketDataProvider(
             append(timeframe.name)
             append("&limit=160")
         }
+        val startedAt = System.currentTimeMillis()
         val connection = URL(endpoint).openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = "GET"
@@ -69,7 +83,13 @@ class RenderMarketDataProvider(
             val status = connection.responseCode
             require(status in 200..299) { "Render feed returned HTTP $status" }
             val body = connection.inputStream.bufferedReader().use { it.readText() }
-            parseSnapshot(symbol, timeframe, body)
+            parseSnapshot(symbol, timeframe, body).copy(
+                diagnostics = FeedDiagnostics(
+                    endpoint = endpoint,
+                    latencyMs = System.currentTimeMillis() - startedAt,
+                    httpStatus = status
+                )
+            )
         } finally {
             connection.disconnect()
         }
@@ -175,11 +195,31 @@ class FallbackMarketDataProvider(
             require(it.candles.size >= 90) { "Provider returned insufficient candle history" }
         }
     } catch (error: Exception) {
+        val diagnostics = FeedDiagnostics(
+            endpoint = "https://mnm-au-seekers-api.onrender.com/market-data",
+            failureType = classifyFailure(error),
+            message = error.message ?: error.javaClass.simpleName
+        )
         fallback.snapshot(symbol, timeframe).copy(
             mode = MarketDataMode.FALLBACK,
             providerName = fallback.name,
-            note = "Primary feed unavailable: ${error.message ?: "unknown error"}"
+            note = "Primary feed unavailable: ${diagnostics.message}",
+            diagnostics = diagnostics
         )
+    }
+
+    internal fun classifyFailure(error: Exception): FeedFailureType = when (error) {
+        is UnknownHostException -> FeedFailureType.DNS
+        is java.net.SocketTimeoutException -> FeedFailureType.TIMEOUT
+        is SSLException -> FeedFailureType.SSL
+        is org.json.JSONException -> FeedFailureType.SCHEMA
+        is IllegalArgumentException -> when {
+            error.message?.contains("HTTP", ignoreCase = true) == true -> FeedFailureType.HTTP
+            error.message?.contains("candle", ignoreCase = true) == true ||
+                error.message?.contains("OHLC", ignoreCase = true) == true -> FeedFailureType.DATA
+            else -> FeedFailureType.UNKNOWN
+        }
+        else -> FeedFailureType.UNKNOWN
     }
 }
 
