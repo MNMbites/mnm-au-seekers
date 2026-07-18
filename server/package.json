@@ -1,0 +1,14 @@
+{
+  "name": "mnm-au-seekers-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Broker-neutral market-data contract for MNM AU Seekers",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
