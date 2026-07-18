@@ -44,6 +44,28 @@ class AnalysisEngineTest {
     }
 
     @Test
+    fun demoProviderReturnsCompleteSnapshot() {
+        val snapshot = DemoMarketDataProvider().snapshot("XAUUSD", Timeframe.H4)
+        assertEquals("XAUUSD", snapshot.symbol)
+        assertEquals(Timeframe.H4, snapshot.timeframe)
+        assertEquals(MarketDataMode.DEMO, snapshot.mode)
+        assertTrue(snapshot.candles.size >= 90)
+    }
+
+    @Test
+    fun fallbackProviderMarksFallbackModeWhenPrimaryFails() {
+        val failing = object : MarketDataProvider {
+            override val name = "Broken live feed"
+            override fun snapshot(symbol: String, timeframe: Timeframe): MarketSnapshot = error("offline")
+        }
+        val provider = FallbackMarketDataProvider(failing, DemoMarketDataProvider())
+        val snapshot = provider.snapshot("XAUUSD", Timeframe.H1)
+        assertEquals(MarketDataMode.FALLBACK, snapshot.mode)
+        assertTrue(snapshot.note.orEmpty().contains("offline"))
+        assertTrue(snapshot.candles.size >= 90)
+    }
+
+    @Test
     fun movingAveragesPreserveSeriesLength() {
         val values = (1..100).map(Int::toDouble)
         assertEquals(values.size, AnalysisEngine.sma(values, 21).size)
