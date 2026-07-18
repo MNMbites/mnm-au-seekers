@@ -11,4 +11,6 @@ services:
       - key: NODE_VERSION
         value: 20
       - key: MARKET_DATA_MODE
-        value: synthetic-development
+        value: live-ingest
+      - key: MNM_INGEST_API_KEY
+        generateValue: true
