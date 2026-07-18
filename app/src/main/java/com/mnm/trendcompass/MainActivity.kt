@@ -38,11 +38,18 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun TrendCompassApp() {
+fun TrendCompassApp(provider: MarketDataProvider = AppMarketData.provider) {
     var selected by remember { mutableStateOf(Timeframe.H4) }
-    val previous = remember { PreviousDayCompass(high = 3367.4, low = 3321.8) }
-    val results = remember { Timeframe.entries.associateWith { AnalysisEngine.analyze(it, DemoMarketData.candles(it), previous) } }
+    val snapshots = remember(provider) {
+        Timeframe.entries.associateWith { provider.snapshot("XAUUSD", it) }
+    }
+    val results = remember(snapshots) {
+        snapshots.mapValues { (_, snapshot) ->
+            AnalysisEngine.analyze(snapshot.timeframe, snapshot.candles, snapshot.previousDay)
+        }
+    }
     val active = results.getValue(selected)
+    val activeSnapshot = snapshots.getValue(selected)
     val overall = results.values.sumOf { directionValue(it.direction) * it.score * it.timeframe.weight }
     val overallDirection = if (overall > 10) Direction.BULLISH else if (overall < -10) Direction.BEARISH else Direction.NEUTRAL
 
@@ -52,15 +59,15 @@ fun TrendCompassApp() {
                 modifier = Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Header(overallDirection, kotlin.math.abs(overall).toInt())
+                Header(overallDirection, kotlin.math.abs(overall).toInt(), activeSnapshot)
                 TimeframeTabs(selected) { selected = it }
                 ExecutiveSummaryCard(active)
-                PriceChart(active)
+                PriceChart(active, activeSnapshot)
                 IndicatorCard(active)
                 PreviousDayCard(active)
                 TargetCard(active)
                 TimeframeConsensus(results)
-                Text("Prototype uses deterministic demo candles. The MarketDataProvider seam is reserved for the live feed adapter.", color = Color.White.copy(alpha = .55f), style = MaterialTheme.typography.bodySmall)
+                SourceCard(activeSnapshot)
             }
         }
     }
@@ -69,11 +76,11 @@ fun TrendCompassApp() {
 private fun directionValue(d: Direction) = when (d) { Direction.BULLISH -> 1; Direction.BEARISH -> -1; Direction.NEUTRAL -> 0 }
 
 @Composable
-private fun Header(direction: Direction, score: Int) {
+private fun Header(direction: Direction, score: Int, snapshot: MarketSnapshot) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column {
             Text("MNM TREND COMPASS", color = SoftGold, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleLarge)
-            Text("XAUUSD • specialized alignment engine", color = Color.White.copy(alpha = .65f))
+            Text("${snapshot.symbol} • specialized alignment engine", color = Color.White.copy(alpha = .65f))
         }
         DirectionBadge(direction, score)
     }
@@ -121,12 +128,13 @@ private fun ExecutiveSummaryCard(r: AnalysisResult) {
 }
 
 @Composable
-private fun PriceChart(result: AnalysisResult) {
+private fun PriceChart(result: AnalysisResult, snapshot: MarketSnapshot) {
+    val modeColor = when (snapshot.mode) { MarketDataMode.LIVE -> Bull; MarketDataMode.FALLBACK -> Bear; MarketDataMode.DEMO -> Gold }
     Surface(color = PanelGreen, shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Live analysis chart", color = Color.White, fontWeight = FontWeight.Bold)
-                Text("${result.candles.last().close.format()}  DEMO ●", color = Gold)
+                Text("Analysis chart", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("${result.candles.last().close.format()}  ${snapshot.mode.name} ●", color = modeColor)
             }
             Spacer(Modifier.height(8.dp))
             Canvas(Modifier.fillMaxWidth().height(320.dp).background(DeepGreen, RoundedCornerShape(14.dp))) {
@@ -212,6 +220,14 @@ private fun TargetCard(r: AnalysisResult) = MetricPanel("Forecast travel map") {
 @Composable
 private fun TimeframeConsensus(results: Map<Timeframe, AnalysisResult>) = MetricPanel("Four-timeframe consensus") {
     results.forEach { (tf, r) -> MetricRow(tf.label, "${r.direction.name} • ${r.fanSummary.phase.name.replace('_', ' ')} • ${r.score}%") }
+}
+
+@Composable
+private fun SourceCard(snapshot: MarketSnapshot) = MetricPanel("Market data source") {
+    MetricRow("Provider", snapshot.providerName)
+    MetricRow("Mode", snapshot.mode.name)
+    MetricRow("Candles", snapshot.candles.size.toString())
+    snapshot.note?.let { Text(it, color = Color.White.copy(alpha = .55f), style = MaterialTheme.typography.bodySmall) }
 }
 
 @Composable
